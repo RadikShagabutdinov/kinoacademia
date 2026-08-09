@@ -1,0 +1,4 @@
+# Объявляем все пакеты монорепы — pnpm связывает их через workspace: протокол
+packages:
+  - 'apps/*'      # web, api
+  - 'packages/*'  # shared, config

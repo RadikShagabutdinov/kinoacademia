@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    // Компилируем в ES2022 — поддерживается Node 22 и всеми современными браузерами
+    "target": "ES2022",
+    // ESNext модули — нативный import/export, без CommonJS
+    "module": "ESNext",
+    // bundler — оптимальный режим для Vite/tsup, не требует расширений в импортах
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+
+    // Строгий режим TypeScript — запрещает any, null-ошибки и неявные типы
+    "strict": true,
+    // arr[0] возвращает T | undefined, а не T — защита от out-of-bounds
+    "noUncheckedIndexedAccess": true,
+    // Нельзя передать undefined в поле, которое ожидает только отсутствие свойства
+    "exactOptionalPropertyTypes": true,
+    // Все ветки функции должны явно возвращать значение
+    "noImplicitReturns": true,
+    // Запрет fallthrough в switch без break/return
+    "noFallthroughCasesInSwitch": true,
+    // Единый регистр имён файлов на всех ОС (важно при деплое на Linux)
+    "forceConsistentCasingInFileNames": true,
+
+    // Не проверяем типы в .d.ts файлах зависимостей — ускоряет компиляцию
+    "skipLibCheck": true,
+    // Каждый файл — независимый модуль (нужно для esbuild/SWC транспайлеров)
+    "isolatedModules": true,
+
+    // Генерируем .d.ts и sourcemaps для пакетов shared/config
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  }
+}

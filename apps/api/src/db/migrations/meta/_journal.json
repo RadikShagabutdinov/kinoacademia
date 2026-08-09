@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1777487909671,
+      "tag": "0000_bitter_whizzer",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777489942022,
+      "tag": "0001_left_ezekiel_stane",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1746037620000,
+      "tag": "0002_admin_users_persons",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777496184449,
+      "tag": "0003_common_black_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777529400000,
+      "tag": "0004_rename_users_email_to_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780000000000,
+      "tag": "0005_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783000000000,
+      "tag": "0007_must_change_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784000000000,
+      "tag": "0008_branch_news_to_other",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785000000000,
+      "tag": "0009_scans",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786000000000,
+      "tag": "0010_contract_breakup_initiator",
+      "breakpoints": true
+    }
+  ]
+}

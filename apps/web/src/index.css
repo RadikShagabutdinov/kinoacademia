@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+/* Тема пишется в data-theme на <html> из themeStore — значение всегда разрешённое
+   ('light' | 'dark'), поэтому вариант dark: работает и при тёмной базе. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Базовые значения — ТЁМНАЯ тема: игра ночная, тёмная считается основной.
+   Светлая переопределяется ниже через [data-theme="light"]. Побочный эффект,
+   который нам нужен: до выполнения JS атрибута нет и применяется база, значит
+   белой вспышки при загрузке не будет. */
+@theme {
+  --color-bg: oklch(15% 0.013 300);
+  --color-fg: oklch(94.8% 0.011 77);
+  --color-muted: oklch(22.3% 0.028 304);
+  --color-muted-fg: oklch(70.7% 0.033 311);
+  --color-border: oklch(27.7% 0.034 305);
+  --color-input: oklch(22.3% 0.028 304);
+  --color-ring: oklch(78.6% 0.131 85);
+  --color-card: oklch(18.8% 0.023 301);
+  --color-card-fg: oklch(94.8% 0.011 77);
+  --color-primary: oklch(78.6% 0.131 85);
+  --color-primary-fg: oklch(15% 0.013 300);
+  --color-destructive: oklch(60.6% 0.181 23);
+  --color-destructive-fg: oklch(15% 0.013 300);
+  --color-accent: oklch(78.6% 0.131 85);
+  --color-accent-fg: oklch(15% 0.013 300);
+
+  /* Третий уровень глубины: поверхность над карточкой (плитки, таб-бар). */
+  --color-elevated: oklch(22.3% 0.028 304);
+  /* Третий уровень текста — тише, чем muted-fg: подписи, метки времени. */
+  --color-subtle-fg: oklch(50.8% 0.037 310);
+  /* Звезда намеренно отдельно от accent: в светлой теме accent другой,
+     а признак Звезды должен оставаться золотым в обеих темах. */
+  --color-star: oklch(86.7% 0.126 91);
+  --color-star-fg: oklch(15% 0.013 300);
+  --color-success: oklch(66.8% 0.109 161);
+  --color-success-fg: oklch(15% 0.013 300);
+  /* Отдельного предупреждающего цвета в палитре нет — эту роль играет золото. */
+  --color-warning: oklch(78.6% 0.131 85);
+  --color-warning-fg: oklch(15% 0.013 300);
+  /* Зебра плотных таблиц: мониторы менеджера информации, админка. */
+  --color-row-alt: oklch(17.7% 0.019 300);
+  /* Разделитель строк внутри карточки — тоньше основного border. */
+  --color-hairline: oklch(22.3% 0.028 304);
+
+  /* Сегмент «База»/«Капитализация» в разбивке рейтинга: нейтральный цвет,
+     который не конфликтует ни с accent, ни с success/destructive. */
+  --color-chart-1: oklch(66.5% 0.032 271);
+
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-sans: "Manrope Variable", Manrope, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 20px;
+  --radius-pill: 30px;
+}
+
+[data-theme="light"] {
+  --color-bg: oklch(96% 0.011 77);
+  --color-fg: oklch(20.4% 0.023 309);
+  --color-muted: oklch(93.4% 0.014 74);
+  --color-muted-fg: oklch(50.5% 0.028 315);
+  --color-border: oklch(87.2% 0.021 72);
+  --color-input: oklch(100% 0 0);
+  --color-ring: oklch(60.3% 0.117 76);
+  --color-card: oklch(100% 0 0);
+  --color-card-fg: oklch(20.4% 0.023 309);
+  --color-primary: oklch(37.2% 0.08 339);
+  --color-primary-fg: oklch(96% 0.011 77);
+  --color-destructive: oklch(51.4% 0.164 23);
+  --color-destructive-fg: oklch(100% 0 0);
+  --color-accent: oklch(60.3% 0.117 76);
+  --color-accent-fg: oklch(100% 0 0);
+
+  --color-elevated: oklch(93.4% 0.014 74);
+  --color-subtle-fg: oklch(64.2% 0.028 314);
+  --color-star: oklch(60.3% 0.117 76);
+  --color-star-fg: oklch(100% 0 0);
+  --color-success: oklch(52.8% 0.095 160);
+  --color-success-fg: oklch(100% 0 0);
+  --color-warning: oklch(60.3% 0.117 76);
+  --color-warning-fg: oklch(100% 0 0);
+  --color-row-alt: oklch(96% 0.011 77);
+  --color-hairline: oklch(93.4% 0.014 74);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: var(--color-border);
+}
+
+html {
+  color-scheme: dark light;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  min-height: 100dvh;
+}
+
+/* Мягкое свечение сверху экрана — приём из макета главной и большого экрана. */
+.accent-glow::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 60vh;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    120% 60% at 50% 0%,
+    color-mix(in oklab, var(--color-accent) 18%, transparent),
+    transparent 70%
+  );
+}
+
+@keyframes flash {
+  0% {
+    background-color: color-mix(in oklab, var(--color-accent) 60%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-flash {
+  animation: flash 700ms ease-out;
+}

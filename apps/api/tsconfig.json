@@ -1,0 +1,18 @@
+{
+  // Базовые strict-настройки — см. /tsconfig.base.json
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Только серверное API, без DOM
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    // Алиас @/ → src/ — import из '@/modules/auth' вместо '../../../modules/auth'
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

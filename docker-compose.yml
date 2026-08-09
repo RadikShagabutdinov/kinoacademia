@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: kinoacademia-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kinoacademia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kinoacademia}
+      POSTGRES_DB: ${POSTGRES_DB:-kinoacademia}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-kinoacademia} -d ${POSTGRES_DB:-kinoacademia}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Локальное хранилище сканов контрактов (пока api запускается локально —
+  # том используется через bind-mount на ./storage/scans, см. переменную SCANS_STORAGE_DIR).
+  # При переезде api в docker-compose добавить сюда сервис api с монтированием scans-data.
+
+volumes:
+  postgres-data:
+  scans-data:

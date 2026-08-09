@@ -1,0 +1,432 @@
+import { randomUUID } from 'node:crypto';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CompanyRatingRow, PersonRatingRow, RatingTransactionRow } from './ratings-repo';
+
+const personRows = new Map<string, PersonRatingRow>();
+const companyRows = new Map<string, CompanyRatingRow>();
+const transactions: RatingTransactionRow[] = [];
+const personHasContract = new Map<string, boolean>();
+
+vi.mock('../../db/client', () => {
+  const fakeDb = {
+    transaction: async <T>(cb: (tx: unknown) => Promise<T>): Promise<T> => cb(fakeDb),
+  };
+  return { db: fakeDb, queryClient: { end: async () => {} } };
+});
+
+vi.mock('../contracts/contracts.service', () => ({
+  setPenaltyHook: vi.fn(),
+}));
+
+const seedPerson = (overrides: Partial<PersonRatingRow> = {}): PersonRatingRow => {
+  const personId = overrides.personId ?? randomUUID();
+  const row: PersonRatingRow = {
+    personId,
+    generated: 0,
+    nowPermanent: 0,
+    lastPermanent: 0,
+    base: 0,
+    randomizer: 0,
+    systemTopup: 0,
+    manualTopup: 0,
+    oscar: 0,
+    penalties: 0,
+    updatedAt: new Date(),
+    ...overrides,
+  };
+  personRows.set(personId, row);
+  return row;
+};
+
+const seedCompany = (overrides: Partial<CompanyRatingRow> = {}): CompanyRatingRow => {
+  const companyId = overrides.companyId ?? randomUUID();
+  const row: CompanyRatingRow = {
+    companyId,
+    budget: 0,
+    employeePermanent: 0,
+    manualTopup: 0,
+    oscar: 0,
+    penalties: 0,
+    updatedAt: new Date(),
+    ...overrides,
+  };
+  companyRows.set(companyId, row);
+  return row;
+};
+
+const recomputePersonNow = (row: PersonRatingRow): number =>
+  row.base + row.randomizer + row.systemTopup + row.manualTopup + row.oscar - row.penalties;
+
+vi.mock('./ratings-repo', () => ({
+  ensurePersonRating: async (_e: unknown, personId: string) => {
+    const r = personRows.get(personId) ?? seedPerson({ personId });
+    return { ...r };
+  },
+  ensureCompanyRating: async (_e: unknown, companyId: string) => {
+    const r = companyRows.get(companyId) ?? seedCompany({ companyId });
+    return { ...r };
+  },
+  applyPersonDelta: async (_e: unknown, personId: string, delta: Partial<PersonRatingRow>) => {
+    const cur = personRows.get(personId) ?? seedPerson({ personId });
+    const before = cur.nowPermanent;
+    const next: PersonRatingRow = {
+      ...cur,
+      base: cur.base + (delta.base ?? 0),
+      randomizer: cur.randomizer + (delta.randomizer ?? 0),
+      systemTopup: cur.systemTopup + (delta.systemTopup ?? 0),
+      manualTopup: cur.manualTopup + (delta.manualTopup ?? 0),
+      oscar: cur.oscar + (delta.oscar ?? 0),
+      penalties: cur.penalties + (delta.penalties ?? 0),
+      generated: cur.generated + (delta.generated ?? 0),
+      updatedAt: new Date(),
+    };
+    const touchedPermanent =
+      delta.base !== undefined ||
+      delta.randomizer !== undefined ||
+      delta.systemTopup !== undefined ||
+      delta.manualTopup !== undefined ||
+      delta.oscar !== undefined ||
+      delta.penalties !== undefined;
+    if (touchedPermanent) {
+      next.lastPermanent = before;
+      next.nowPermanent = recomputePersonNow(next);
+    }
+    personRows.set(personId, next);
+    return { ...next };
+  },
+  applyCompanyDelta: async (_e: unknown, companyId: string, delta: Partial<CompanyRatingRow>) => {
+    const cur = companyRows.get(companyId) ?? seedCompany({ companyId });
+    const next: CompanyRatingRow = {
+      ...cur,
+      budget: cur.budget + (delta.budget ?? 0),
+      employeePermanent: cur.employeePermanent + (delta.employeePermanent ?? 0),
+      manualTopup: cur.manualTopup + (delta.manualTopup ?? 0),
+      oscar: cur.oscar + (delta.oscar ?? 0),
+      penalties: cur.penalties + (delta.penalties ?? 0),
+      updatedAt: new Date(),
+    };
+    companyRows.set(companyId, next);
+    return { ...next };
+  },
+  insertTransaction: async (
+    _e: unknown,
+    data: {
+      donorPersonId?: string | null;
+      donorCompanyId?: string | null;
+      recipientPersonId?: string | null;
+      recipientCompanyId?: string | null;
+      amount: number;
+      kind: RatingTransactionRow['kind'];
+      comment?: string | null;
+      authorUserId?: string | null;
+    },
+  ) => {
+    const row: RatingTransactionRow = {
+      id: randomUUID(),
+      donorPersonId: data.donorPersonId ?? null,
+      donorCompanyId: data.donorCompanyId ?? null,
+      recipientPersonId: data.recipientPersonId ?? null,
+      recipientCompanyId: data.recipientCompanyId ?? null,
+      amount: data.amount,
+      kind: data.kind,
+      comment: data.comment ?? null,
+      authorUserId: data.authorUserId ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    transactions.push(row);
+    return { ...row };
+  },
+  listAllPersonRatings: async () => Array.from(personRows.values()).map((r) => ({ ...r })),
+  listAllCompanyRatings: async () => Array.from(companyRows.values()).map((r) => ({ ...r })),
+  listPersonHistory: async (
+    _e: unknown,
+    personId: string,
+    _limit?: number,
+    kind?: RatingTransactionRow['kind'],
+    excludeKinds?: RatingTransactionRow['kind'][],
+  ) =>
+    transactions
+      .filter((t) => t.donorPersonId === personId || t.recipientPersonId === personId)
+      .filter((t) => (kind ? t.kind === kind : true))
+      .filter((t) => !excludeKinds?.includes(t.kind))
+      .map((t) => ({ ...t })),
+  listCompanyHistory: async (_e: unknown, companyId: string) =>
+    transactions
+      .filter((t) => t.donorCompanyId === companyId || t.recipientCompanyId === companyId)
+      .map((t) => ({ ...t })),
+  findActivePermanentByPersonId: async (_e: unknown, personId: string) =>
+    personHasContract.get(personId) ?? false,
+}));
+
+import * as service from './ratings.service';
+
+const ACTOR = randomUUID();
+
+beforeEach(() => {
+  personRows.clear();
+  companyRows.clear();
+  transactions.length = 0;
+  personHasContract.clear();
+});
+
+describe('expressAdmiration', () => {
+  it('×1 when neither donor nor recipient is Star', async () => {
+    const donor = seedPerson({ generated: 5 });
+    const recipient = seedPerson();
+    const result = await service.expressAdmiration({
+      donorPersonId: donor.personId,
+      recipientPersonId: recipient.personId,
+      amount: 3,
+      actorUserId: ACTOR,
+    });
+    expect(result.donor.generated).toBe(2);
+    expect(result.recipient.systemTopup).toBe(3);
+    expect(result.tx.kind).toBe('variable_to_permanent');
+    expect(result.tx.amount).toBe(3);
+  });
+
+  it('×5 when donor is Star (nowPermanent ≥ 1000)', async () => {
+    const donor = seedPerson({ generated: 5, base: 1000, nowPermanent: 1000 });
+    const recipient = seedPerson();
+    const result = await service.expressAdmiration({
+      donorPersonId: donor.personId,
+      recipientPersonId: recipient.personId,
+      amount: 2,
+      actorUserId: ACTOR,
+    });
+    expect(result.tx.kind).toBe('star_bonus');
+    expect(result.tx.amount).toBe(10);
+    expect(result.recipient.systemTopup).toBe(10);
+  });
+
+  it('×5 when donor is Star (≥500 + active permanent)', async () => {
+    const donor = seedPerson({ generated: 5, base: 500, nowPermanent: 500 });
+    personHasContract.set(donor.personId, true);
+    const recipient = seedPerson();
+    const result = await service.expressAdmiration({
+      donorPersonId: donor.personId,
+      recipientPersonId: recipient.personId,
+      amount: 2,
+      actorUserId: ACTOR,
+    });
+    expect(result.tx.amount).toBe(10);
+  });
+
+  it('×1 when only the recipient is Star: бонус — свойство отправителя', async () => {
+    const donor = seedPerson({ generated: 5 });
+    const recipient = seedPerson({ base: 1000, nowPermanent: 1000 });
+    const result = await service.expressAdmiration({
+      donorPersonId: donor.personId,
+      recipientPersonId: recipient.personId,
+      amount: 2,
+      actorUserId: ACTOR,
+    });
+    expect(result.tx.kind).toBe('variable_to_permanent');
+    expect(result.tx.amount).toBe(2);
+  });
+
+  it('rejects self-transfer', async () => {
+    const donor = seedPerson({ generated: 5 });
+    await expect(
+      service.expressAdmiration({
+        donorPersonId: donor.personId,
+        recipientPersonId: donor.personId,
+        amount: 1,
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'self_transfer' });
+  });
+
+  it('rejects when donor lacks generated', async () => {
+    const donor = seedPerson({ generated: 1 });
+    const recipient = seedPerson();
+    await expect(
+      service.expressAdmiration({
+        donorPersonId: donor.personId,
+        recipientPersonId: recipient.personId,
+        amount: 5,
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'insufficient_generated' });
+  });
+
+  it('updates lastPermanent to previous nowPermanent on transfer', async () => {
+    const donor = seedPerson({ generated: 10 });
+    const recipient = seedPerson({ base: 100, nowPermanent: 100 });
+    const result = await service.expressAdmiration({
+      donorPersonId: donor.personId,
+      recipientPersonId: recipient.personId,
+      amount: 5,
+      actorUserId: ACTOR,
+    });
+    expect(result.recipient.lastPermanent).toBe(100);
+    expect(result.recipient.nowPermanent).toBe(105);
+  });
+});
+
+describe('manualPersonTransaction', () => {
+  it('absolute mode adds to manualTopup', async () => {
+    const p = seedPerson();
+    const result = await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: 50,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+    expect(result.row.manualTopup).toBe(50);
+    expect(result.row.nowPermanent).toBe(50);
+    expect(result.tx.kind).toBe('manual');
+  });
+
+  it('absolute negative subtracts', async () => {
+    const p = seedPerson({ manualTopup: 100, nowPermanent: 100, base: 0 });
+    const result = await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: -30,
+      actorUserId: ACTOR,
+    });
+    expect(result.row.manualTopup).toBe(70);
+  });
+
+  it('percent mode computes from nowPermanent', async () => {
+    const p = seedPerson({ nowPermanent: 200, base: 200, manualTopup: 0 });
+    const result = await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: 10,
+      mode: 'percent',
+      actorUserId: ACTOR,
+    });
+    expect(result.row.manualTopup).toBe(20);
+    expect(result.row.nowPermanent).toBe(220);
+    expect(result.tx.amount).toBe(20);
+  });
+});
+
+describe('randomizer', () => {
+  it('apply sets randomizer to absolute value (delta-based) and writes tx', async () => {
+    const a = seedPerson();
+    const b = seedPerson({ randomizer: 10 });
+    const updated = await service.randomizerApply({
+      values: [
+        { personId: a.personId, value: 5 },
+        { personId: b.personId, value: -2 },
+      ],
+      actorUserId: ACTOR,
+    });
+    expect(updated[0]?.randomizer).toBe(5);
+    expect(updated[1]?.randomizer).toBe(-2);
+    expect(transactions.filter((t) => t.kind === 'randomizer')).toHaveLength(2);
+  });
+
+  it('cancel resets all randomizers to 0', async () => {
+    seedPerson({ randomizer: 7, nowPermanent: 7 });
+    seedPerson({ randomizer: -3, nowPermanent: -3 });
+    seedPerson({ randomizer: 0 });
+    const updated = await service.randomizerCancel(ACTOR);
+    expect(updated.every((r) => r.randomizer === 0)).toBe(true);
+    expect(updated).toHaveLength(2);
+  });
+
+  it('rejects duplicate personId in apply payload', async () => {
+    const p = seedPerson();
+    await expect(
+      service.randomizerApply({
+        values: [
+          { personId: p.personId, value: 1 },
+          { personId: p.personId, value: 2 },
+        ],
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'duplicate_randomizer_target' });
+  });
+});
+
+describe('секретность рандомайзера', () => {
+  it('игровая DTO прячет модификатор внутри базы', () => {
+    const row = seedPerson({ base: 100, randomizer: -20, systemTopup: 30, nowPermanent: 110 });
+    const dto = service.toPersonRatingDto(row, false);
+    expect(dto.base).toBe(80);
+    expect(dto).not.toHaveProperty('randomizer');
+    expect(dto.base + dto.systemTopup + dto.manualTopup + dto.oscar - dto.penalties).toBe(
+      dto.nowPermanent,
+    );
+  });
+
+  it('админская DTO отдаёт сырую базу и модификатор', () => {
+    const row = seedPerson({ base: 100, randomizer: -20, nowPermanent: 80 });
+    const dto = service.toPersonRatingAdminDto(row, true);
+    expect(dto.base).toBe(100);
+    expect(dto.randomizer).toBe(-20);
+    expect(dto.isStar).toBe(true);
+  });
+
+  it('игровая история не содержит транзакций рандомайзера', async () => {
+    const p = seedPerson();
+    await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: 50,
+      actorUserId: ACTOR,
+    });
+    await service.randomizerApply({
+      values: [{ personId: p.personId, value: 5 }],
+      actorUserId: ACTOR,
+    });
+
+    const all = await service.listPersonHistory(p.personId);
+    expect(all.some((t) => t.kind === 'randomizer')).toBe(true);
+
+    const forPlayer = await service.listPersonHistoryForPlayer(p.personId);
+    expect(forPlayer.some((t) => t.kind === 'randomizer')).toBe(false);
+    expect(forPlayer).toHaveLength(1);
+
+    // Явный запрос по скрытому виду отдаёт пустой список, а не ошибку.
+    await expect(
+      service.listPersonHistoryForPlayer(p.personId, undefined, 'randomizer'),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe('contract break penalty', () => {
+  it('subtracts from person and adds to company rating', async () => {
+    const p = seedPerson({ base: 200, nowPermanent: 200 });
+    const c = seedCompany({ employeePermanent: 100 });
+    await service.applyContractBreakPenalty({
+      personId: p.personId,
+      companyId: c.companyId,
+      amount: 100,
+      reason: 'unilateral_break_by_person',
+    });
+    const personAfter = personRows.get(p.personId);
+    const companyAfter = companyRows.get(c.companyId);
+    expect(personAfter?.penalties).toBe(100);
+    expect(personAfter?.nowPermanent).toBe(100);
+    expect(companyAfter?.penalties).toBe(100);
+    expect(transactions.find((t) => t.kind === 'penalty')).toMatchObject({
+      donorPersonId: p.personId,
+      recipientCompanyId: c.companyId,
+      amount: 100,
+    });
+  });
+});
+
+describe('star thresholds (via getPersonRating)', () => {
+  it('isStar=true at nowPermanent >= 1000', async () => {
+    const p = seedPerson({ base: 1000, nowPermanent: 1000 });
+    const { isStar } = await service.getPersonRating(p.personId);
+    expect(isStar).toBe(true);
+  });
+
+  it('isStar=true at >= 500 with active permanent', async () => {
+    const p = seedPerson({ base: 500, nowPermanent: 500 });
+    personHasContract.set(p.personId, true);
+    const { isStar } = await service.getPersonRating(p.personId);
+    expect(isStar).toBe(true);
+  });
+
+  it('isStar=false at 500 without contract', async () => {
+    const p = seedPerson({ base: 500, nowPermanent: 500 });
+    const { isStar } = await service.getPersonRating(p.personId);
+    expect(isStar).toBe(false);
+  });
+});

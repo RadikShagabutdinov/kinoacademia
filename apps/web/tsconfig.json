@@ -1,0 +1,19 @@
+{
+  // Базовые strict-настройки — см. /tsconfig.base.json
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // DOM API — window, document и т.д.; DOM.Iterable — for...of по NodeList
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // Режим JSX для React 19 — не требует импорта React в каждом файле
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
+    "baseUrl": ".",
+    // Алиас @/ → src/ — import из '@/components/Button' вместо '../../../components/Button'
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
