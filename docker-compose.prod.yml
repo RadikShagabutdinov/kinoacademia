@@ -1,0 +1,62 @@
+# Продакшн-стек: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# Наружу смотрит только Caddy (80/443); api, web и postgres доступны лишь внутри сети.
+#
+# Своё имя проекта: иначе тома совпадут с dev-стеком из docker-compose.yml
+# (имя проекта по умолчанию — имя каталога), и прод поднимется на dev-базе.
+name: kinoacademia-prod
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - web
+
+  web:
+    image: ${IMAGE_WEB:-ghcr.io/OWNER/kinoacademia-web}:${TAG:-latest}
+    restart: unless-stopped
+
+  api:
+    image: ${IMAGE_API:-ghcr.io/OWNER/kinoacademia-api}:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    volumes:
+      # Сканы контрактов лежат на диске (STORAGE_DRIVER=local) — без тома
+      # они пропадут при первом же обновлении образа.
+      - scans-data:/data/scans
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  scans-data:
+  caddy-data:
+  caddy-config:

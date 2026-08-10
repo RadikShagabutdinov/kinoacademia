@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+.git
+.github
+.cursor
+storage
+**/.env
+**/.env.*
+!**/.env.example
+*.md
+docker-compose*.yml
+Caddyfile

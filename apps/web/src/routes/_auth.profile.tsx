@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NoticeBox } from '@/components/ui/notice-box';
 import { DisplayNumber, SectionLabel } from '@/components/ui/typography';
-import { useMe } from '@/hooks/useMe';
+import { meQueryOptions, useMe } from '@/hooks/useMe';
 import { formatAmount } from '@/lib/tone';
 import {
   NOMINATION_LABELS,
@@ -18,7 +18,7 @@ import {
   STAR_RATING_WITH_CONTRACT,
 } from '@kinoacademia/shared';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { LogOut } from 'lucide-react';
 
 const myRatingQueryOptions = queryOptions<PersonRatingDto>({
@@ -28,6 +28,14 @@ const myRatingQueryOptions = queryOptions<PersonRatingDto>({
 });
 
 export const Route = createFileRoute('/_auth/profile')({
+  // Профиль показывает персонажа; у админа его нет, а тема, смена пароля
+  // и выход доступны из шапки — страница для него пустая.
+  beforeLoad: async ({ context }) => {
+    const me = await context.queryClient.ensureQueryData(meQueryOptions);
+    if (me.user.roleCode === 'admin') {
+      throw redirect({ to: '/admin/users' });
+    }
+  },
   component: ProfilePage,
 });
 

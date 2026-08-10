@@ -1,0 +1,29 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# SCAN_MAX_FILE_SIZE (10 МБ) × SCAN_MAX_PAGES (4) + запас на multipart-обвязку.
+	request_body {
+		max_size 48MB
+	}
+
+	# Upgrade до WebSocket Caddy проксирует сам, отдельной директивы не нужно.
+	handle /ws* {
+		reverse_proxy api:3000
+	}
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	handle /health* {
+		reverse_proxy api:3000
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as AuthIndexRouteImport } from './routes/_auth.index'
@@ -46,6 +47,11 @@ import { Route as AuthAdminJobsIndexRouteImport } from './routes/_auth.admin.job
 import { Route as AuthAdminPersonsIdRouteImport } from './routes/_auth.admin.persons.$id'
 import { Route as AuthAdminJobsKeyRouteImport } from './routes/_auth.admin.jobs.$key'
 
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -231,6 +237,7 @@ const AuthAdminJobsKeyRoute = AuthAdminJobsKeyRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AuthIndexRoute
   '/login': typeof LoginRoute
+  '/status': typeof StatusRoute
   '/admin': typeof AuthAdminRouteWithChildren
   '/admire': typeof AuthAdmireRoute
   '/change-password': typeof AuthChangePasswordRoute
@@ -267,6 +274,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/status': typeof StatusRoute
   '/admin': typeof AuthAdminRouteWithChildren
   '/admire': typeof AuthAdmireRoute
   '/change-password': typeof AuthChangePasswordRoute
@@ -305,6 +313,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_auth': typeof AuthRouteWithChildren
   '/login': typeof LoginRoute
+  '/status': typeof StatusRoute
   '/_auth/admin': typeof AuthAdminRouteWithChildren
   '/_auth/admire': typeof AuthAdmireRoute
   '/_auth/change-password': typeof AuthChangePasswordRoute
@@ -345,6 +354,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/status'
     | '/admin'
     | '/admire'
     | '/change-password'
@@ -381,6 +391,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/status'
     | '/admin'
     | '/admire'
     | '/change-password'
@@ -418,6 +429,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_auth'
     | '/login'
+    | '/status'
     | '/_auth/admin'
     | '/_auth/admire'
     | '/_auth/change-password'
@@ -457,11 +469,19 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   LoginRoute: typeof LoginRoute
+  StatusRoute: typeof StatusRoute
   DisplayLeaderboardRoute: typeof DisplayLeaderboardRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -824,6 +844,7 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   LoginRoute: LoginRoute,
+  StatusRoute: StatusRoute,
   DisplayLeaderboardRoute: DisplayLeaderboardRoute,
 }
 export const routeTree = rootRouteImport

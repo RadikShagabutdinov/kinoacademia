@@ -1,0 +1,96 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # Сервис Postgres не нужен: все тесты мокают db/client, реальное
+      # подключение только в db.smoke.test.ts за флагом RUN_DB_SMOKE.
+      - run: pnpm test
+      - run: pnpm build
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kinoacademia
+          POSTGRES_PASSWORD: kinoacademia
+          POSTGRES_DB: kinoacademia
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://kinoacademia:kinoacademia@localhost:5432/kinoacademia
+      JWT_ACCESS_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
+      JWT_REFRESH_SECRET: ci-refresh-ci-refresh-ci-refresh-ci-refresh
+      WEB_ORIGIN: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Проверяем накат с нуля тем же раннером, что и в проде, и его
+      # идемпотентность — так ловятся миграции, работающие только инкрементально.
+      - run: pnpm -F api db:migrate:run
+      - run: pnpm -F api db:migrate:run
+      - run: pnpm -F api db:seed
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

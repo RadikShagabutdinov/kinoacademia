@@ -21,6 +21,15 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
   STORAGE_DRIVER: z.enum(['local']).default('local'),
   SCANS_STORAGE_DIR: z.string().default('./storage/scans'),
+  // Каталог с SQL-миграциями для программного раннера (src/db/migrate.ts).
+  // Дефолт рассчитан на запуск из apps/api; в Docker-образе — /app/migrations.
+  MIGRATIONS_DIR: z.string().default('./src/db/migrations'),
+  // Создавать ли тестовых игроков (vamp/wolf) при db:seed. На проде — false.
+  SEED_DEFAULT_PLAYERS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  APP_VERSION: z.string().default('dev'),
 });
 
 export type Env = z.infer<typeof envSchema>;

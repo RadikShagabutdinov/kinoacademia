@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
+import { queryClient } from './db/client';
 import { env, isProduction } from './env';
 import { start as startJobsScheduler } from './jobs';
 import { logger } from './logger';
@@ -41,7 +42,22 @@ app.use(
   }),
 );
 
-app.get('/health', (c) => c.json({ status: 'ok' }));
+// Liveness: процесс жив, зависимости не проверяются.
+app.get('/health', (c) => c.json({ status: 'ok', version: env.APP_VERSION }));
+
+// Readiness: используется в HEALTHCHECK образа и smoke-проверке после деплоя.
+app.get('/health/ready', async (c) => {
+  try {
+    await queryClient`select 1`;
+  } catch (err) {
+    logger.error({ err }, 'readiness check failed');
+    return c.json(
+      { status: 'error', db: 'error', jobs: env.JOBS_ENABLED, version: env.APP_VERSION },
+      503,
+    );
+  }
+  return c.json({ status: 'ok', db: 'ok', jobs: env.JOBS_ENABLED, version: env.APP_VERSION });
+});
 
 app.route('/api/auth', authRoutes);
 app.route('/api/admin/users', adminUsersRoutes);

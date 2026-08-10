@@ -43,8 +43,9 @@ pnpm -F api dev    # http://localhost:3000
 | `docker compose up -d postgres` | Поднять PostgreSQL 16 |
 | `docker compose down` | Остановить контейнер (данные сохраняются в томе) |
 | `pnpm -F api db:generate` | Сгенерировать SQL-миграцию по изменениям Drizzle-схемы |
-| `pnpm -F api db:migrate` | Применить миграции к БД из `DATABASE_URL` |
-| `pnpm -F api db:seed` | Заполнить справочники + создать дефолтных пользователей: `admin` (роль `admin`), `vamp` (`emp`, раса `vamp`, персонаж «Вампир»), `wolf` (`emp`, раса `wolf`, персонаж «Ликан»). Все пароли — из `SEED_ADMIN_PASSWORD` |
+| `pnpm -F api db:migrate` | Применить миграции к БД из `DATABASE_URL` (drizzle-kit) |
+| `pnpm -F api db:migrate:run` | То же программным раннером — так миграции накатываются в проде, где drizzle-kit недоступен |
+| `pnpm -F api db:seed` | Заполнить справочники + создать администратора `admin` (пароль из `SEED_ADMIN_PASSWORD`). При `SEED_DEFAULT_PLAYERS=true` дополнительно создаются тестовые игроки `vamp` (раса `vamp`, персонаж «Вампир») и `wolf` (раса `wolf`, «Ликан») с тем же паролем |
 | `pnpm -F api db:studio` | Drizzle Studio для просмотра данных |
 
 ---
@@ -68,7 +69,14 @@ pnpm -F api dev    # http://localhost:3000
 | `SCANS_STORAGE_DIR` | api | Каталог локального хранилища сканов относительно cwd процесса api (default: `./storage/scans`). Каталог создаётся автоматически при первой загрузке. |
 | `JOBS_ENABLED` | api | Включить планировщик cron (`true` / `false`, default: `true`) |
 | `ENABLE_API_DOCS` | api | Публиковать OpenAPI и Scalar UI в production (`true` / `false`, default: `false`) |
+| `MIGRATIONS_DIR` | api | Каталог с SQL-миграциями для программного раннера `db:migrate:run` (default: `./src/db/migrations`; в Docker-образе — `/repo/apps/api/migrations`) |
+| `APP_VERSION` | api | Версия, которую отдают `/health` и `/health/ready` (default: `dev`; в CI подставляется git-тег) |
+| `SEED_ADMIN_LOGIN` | api (seed) | Логин администратора, создаваемого при `db:seed`. Пусто — админ не создаётся |
 | `SEED_ADMIN_PASSWORD` | api (seed) | Пароль для дефолтных пользователей при `pnpm -F api db:seed` (default: `changeme`) |
+| `SEED_DEFAULT_PLAYERS` | api (seed) | Создавать ли тестовых игроков `vamp`/`wolf` (`true` / `false`, default: `false`). На проде — `false` |
+| `RUN_MIGRATIONS` | api (docker) | Накатывать ли миграции при старте контейнера; читается `docker-entrypoint.sh` (`true` / `false`, default: `true`) |
+| `VITE_API_URL` | web (build) | Базовый URL API. Пусто — относительный `/api` (нужно при раздаче фронта и API с одного домена) |
+| `VITE_WS_URL` | web (build) | URL WebSocket. Пусто — `wss://<текущий host>/ws` |
 
 ENV-переменные `apps/api` валидируются через Zod при старте процесса — при невалидной конфигурации сервер падает с сообщением.
 
@@ -179,7 +187,173 @@ import { LoginInput, PersonDto, RoleCode } from '@kinoacademia/shared';
 
 ## Деплой
 
-> Раздел заполнится после выполнения задачи 18.
+Продакшн — один VPS с Docker Compose. Фронт, API и Postgres живут в одной сети, наружу смотрит только Caddy, который автоматически выпускает и продлевает TLS-сертификат.
+
+```
+интернет → Caddy :80/:443
+             ├── /api/*, /ws*, /health*  → api:3000   (Hono, node:22-slim)
+             └── всё остальное           → web:80     (nginx со статикой Vite)
+                                            api ↔ postgres:5432
+```
+
+Фронт и API отдаются **с одного домена** — это не деталь вкуса: cookie сессии выставлены с `SameSite=Strict`, а клиент по умолчанию ходит на относительный `/api` и `wss://<текущий host>/ws`. При разнесении на разные домены авторизация перестанет работать.
+
+### Окружения
+
+| Окружение | Как запускается |
+|---|---|
+| `local` | `docker compose up -d postgres` + `pnpm dev` (см. «Быстрый старт») |
+| `production` | `docker-compose.prod.yml` + `.env.prod` на VPS, выкат по тегу через GitHub Actions |
+
+Staging при необходимости поднимается тем же `docker-compose.prod.yml` с другим `.env.prod`, доменом и `-p` (имя проекта) — отдельных файлов не требуется.
+
+### Файлы стека
+
+| Файл | Назначение |
+|---|---|
+| `apps/api/Dockerfile` | Multi-stage сборка API: tsup-бандл + прод-зависимости без `tsup`/`tsx`/`drizzle-kit` |
+| `apps/api/docker-entrypoint.sh` | Накатывает миграции (если `RUN_MIGRATIONS=true`) и запускает сервер |
+| `apps/web/Dockerfile` | Сборка статики Vite и её раздача через `nginx:alpine` |
+| `apps/web/nginx.conf` | SPA-fallback, gzip, кэш-заголовки |
+| `docker-compose.prod.yml` | Прод-стек: caddy + web + api + postgres |
+| `Caddyfile` | Роутинг и TLS |
+| `.env.prod.example` | Шаблон продакшн-конфигурации |
+
+Оба образа собираются **из корня репозитория** (нужен весь воркспейс):
+
+```bash
+docker build -f apps/api/Dockerfile -t kinoacademia-api .
+docker build -f apps/web/Dockerfile -t kinoacademia-web .
+```
+
+### Подготовка сервера
+
+1. Направить A-запись домена на IP сервера — без этого Caddy не выпустит сертификат.
+2. Установить Docker с плагином Compose, открыть порты 80 и 443.
+3. Создать каталог выката и положить туда конфигурацию:
+
+```bash
+mkdir -p /opt/kinoacademia && cd /opt/kinoacademia
+# docker-compose.prod.yml и Caddyfile приедут сами при первом деплое,
+# либо скопировать их вручную из репозитория
+cp .env.prod.example .env.prod   # затем отредактировать
+chmod 600 .env.prod
+```
+
+4. Заполнить `.env.prod`. Обязательно поменять: `DOMAIN`, `ACME_EMAIL`, `IMAGE_API`/`IMAGE_WEB`, `POSTGRES_PASSWORD`, `DATABASE_URL`, `WEB_ORIGIN`, `SEED_ADMIN_PASSWORD` и оба JWT-секрета (`openssl rand -hex 32` каждый). Полный перечень переменных — в разделе «Переменные окружения» и в комментариях самого шаблона.
+
+Секреты хранятся только в `.env.prod` на сервере: в git этот файл не попадает (`.gitignore`), а деплой его не перезаписывает.
+
+### Первый выкат
+
+```bash
+cd /opt/kinoacademia
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+# Справочники, системная компания и определения cron-задач.
+# Без сида планировщик не найдёт ни одной задачи.
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api node dist/seed.js
+
+curl https://<домен>/health/ready
+```
+
+Миграции накатываются автоматически при старте контейнера api (`docker-entrypoint.sh` → `node dist/migrate.js`). Это безопасно при одной реплике; если реплик станет больше — выставить `RUN_MIGRATIONS=false` и накатывать отдельным шагом:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api node dist/migrate.js
+```
+
+Планировщик cron работает внутри процесса api, поэтому при нескольких репликах `JOBS_ENABLED=true` должно остаться ровно у одной.
+
+### Обновление и откат
+
+Выкат делает GitHub Actions по тегу (см. ниже). Вручную:
+
+```bash
+cd /opt/kinoacademia
+TAG=v0.2.0 docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+TAG=v0.2.0 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+Откат — тот же набор команд с предыдущим тегом. Образы версионируются, поэтому откат кода мгновенный; **миграции не откатываются** — если релиз менял схему несовместимо, потребуется восстановление из дампа.
+
+### Данные и бэкапы
+
+| Том | Что внутри | Чем грозит потеря |
+|---|---|---|
+| `postgres-data` | вся игровая база | полная потеря состояния игры |
+| `scans-data` | сканы контрактов (`STORAGE_DRIVER=local`) | потеря загруженных документов |
+| `caddy-data` | сертификаты TLS | повторный выпуск (упирается в лимиты Let's Encrypt) |
+
+Дамп базы:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres \
+  pg_dump -U kinoacademia kinoacademia | gzip > backup-$(date +%F-%H%M).sql.gz
+```
+
+Перед игрой и перед каждым релизом со сменой схемы дамп стоит снимать обязательно; в остальное время — по cron на хосте.
+
+### Смена домена
+
+1. Обновить `DOMAIN` и `WEB_ORIGIN` в `.env.prod` (оба, иначе сломается CORS).
+2. `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d` — Caddy выпустит новый сертификат сам.
+
+### Мониторинг
+
+| Точка | Что показывает |
+|---|---|
+| `GET /health` | liveness: процесс жив, зависимости не проверяются |
+| `GET /health/ready` | readiness: доступность БД, состояние планировщика, версия. 503 при недоступной БД |
+| `/status` | публичная страница состояния для игроков и мастеров, обновляется раз в 15 с |
+
+`HEALTHCHECK` контейнера api и smoke-проверка после деплоя используют `/health/ready`.
+
+### CI/CD
+
+**`.github/workflows/ci.yml`** — на каждый push в `main` и на каждый pull request:
+
+- `check` — `pnpm lint`, `typecheck`, `test`, `build`. Postgres не нужен: тесты мокают слой БД.
+- `migrations` — поднимает чистый Postgres и прогоняет `db:migrate:run` дважды подряд плюс `db:seed`. Так ловятся миграции, работающие только инкрементально.
+- `docker` — собирает оба образа без публикации.
+
+**`.github/workflows/deploy.yml`** — на push тега `v*` (или вручную через workflow_dispatch):
+
+1. собирает и пушит образы в GHCR с тегами `:<тег>` и `:latest`;
+2. копирует `docker-compose.prod.yml` и `Caddyfile` на сервер по SSH (`.env.prod` не трогает);
+3. делает `pull` + `up -d` и чистит старые образы;
+4. проверяет `https://<домен>/health/ready` с ретраями — падение шага означает, что выкат не поднялся.
+
+Секреты репозитория (Settings → Secrets and variables → Actions):
+
+| Секрет | Значение |
+|---|---|
+| `SSH_HOST` | IP или хост VPS |
+| `SSH_USER` | пользователь с правом запускать docker |
+| `SSH_KEY` | приватный SSH-ключ для этого пользователя |
+| `SSH_PORT` | порт SSH (опционально, по умолчанию 22) |
+| `DEPLOY_PATH` | каталог выката, например `/opt/kinoacademia` |
+| `PROD_DOMAIN` | домен для финальной проверки, например `kinoacademia.example.com` |
+
+Публикация образов в GHCR идёт под встроенным `GITHUB_TOKEN` — отдельный токен реестра не нужен.
+
+### Локальная проверка прод-стека
+
+Прод-сборку можно поднять на машине разработчика, не выпуская сертификатов:
+
+```bash
+cp .env.prod.example .env.prod
+# в .env.prod: DOMAIN=http://localhost  (префикс http:// отключает автоTLS),
+# IMAGE_API=kinoacademia-api, IMAGE_WEB=kinoacademia-web, TAG=local,
+# DATABASE_URL с хостом postgres, WEB_ORIGIN=http://localhost
+
+docker build -f apps/api/Dockerfile -t kinoacademia-api:local .
+docker build -f apps/web/Dockerfile -t kinoacademia-web:local .
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+Прод-стек использует собственное имя проекта (`kinoacademia-prod`), поэтому его тома не пересекаются с dev-стеком из `docker-compose.yml`.
 
 ---
 

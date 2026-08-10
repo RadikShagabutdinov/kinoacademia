@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
-import { hashPassword } from '../auth/password';
-import { allHandlers } from '../jobs/registry';
+import { hashPassword } from '@/auth/password';
+import { env } from '@/env';
+import { allHandlers } from '@/jobs';
 import { db, queryClient } from './client';
 import {
   branches,
@@ -97,6 +98,11 @@ const DEFAULT_PLAYERS: DefaultPlayer[] = [
 ];
 
 async function seedDefaultPlayers() {
+  if (!env.SEED_DEFAULT_PLAYERS) {
+    console.log('ℹ️  SEED_DEFAULT_PLAYERS=false — skipping default players.');
+    return;
+  }
+
   const password = process.env.SEED_ADMIN_PASSWORD;
   if (!password) return;
 

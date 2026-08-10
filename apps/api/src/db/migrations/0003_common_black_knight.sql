@@ -24,9 +24,9 @@ CREATE TABLE "job_runs" (
 	"output" jsonb
 );
 --> statement-breakpoint
-DROP INDEX "persons_user_id_unique";--> statement-breakpoint
-ALTER TABLE "users" ADD COLUMN "is_active" boolean DEFAULT true NOT NULL;--> statement-breakpoint
-ALTER TABLE "persons" ADD COLUMN "closed_at" timestamp with time zone;--> statement-breakpoint
+DROP INDEX IF EXISTS "persons_user_id_unique";--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "is_active" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "persons" ADD COLUMN IF NOT EXISTS "closed_at" timestamp with time zone;--> statement-breakpoint
 CREATE UNIQUE INDEX "job_runs_key_slot_uq" ON "job_runs" USING btree ("job_key","slot");--> statement-breakpoint
 CREATE INDEX "job_runs_started_at_idx" ON "job_runs" USING btree ("started_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "persons_user_id_open_unique" ON "persons" USING btree ("user_id") WHERE "persons"."is_open" = true AND "persons"."user_id" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "persons_user_id_open_unique" ON "persons" USING btree ("user_id") WHERE "persons"."is_open" = true AND "persons"."user_id" IS NOT NULL;

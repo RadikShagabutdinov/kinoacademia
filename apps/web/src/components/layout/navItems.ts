@@ -19,7 +19,7 @@ export type NavItem = {
 
 /**
  * Единый набор разделов по ролям — им пользуются и верхняя панель на десктопе,
- * и нижний таб-бар на мобильных. Ровно пять пунктов на роль: это ширина
+ * и нижний таб-бар на мобильных. Не больше пяти пунктов на роль: это ширина
  * плавающей пилюли из макета, шестой пункт в неё уже не помещается.
  */
 export const NAV_BY_ROLE: Record<RoleCode, NavItem[]> = {
@@ -46,12 +46,12 @@ export const NAV_BY_ROLE: Record<RoleCode, NavItem[]> = {
     { to: '/display/leaderboard', label: 'Экран', icon: Monitor },
     { to: '/profile', label: 'Профиль', icon: User },
   ],
+  // У админа нет игрового персонажа, поэтому главная и профиль для него пусты
+  // и заменены редиректом в админку — см. beforeLoad в routes/_auth.index.tsx.
   admin: [
-    { to: '/', label: 'Главная', icon: Home },
     { to: '/admin/users', label: 'Админка', icon: Shield },
     { to: '/info/ratings', label: 'Все рейтинги', icon: Monitor },
     { to: '/display/leaderboard', label: 'Экран', icon: Monitor },
-    { to: '/profile', label: 'Профиль', icon: User },
   ],
 };
 

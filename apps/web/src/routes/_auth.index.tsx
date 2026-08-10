@@ -6,11 +6,11 @@ import { CompanyHome } from '@/components/features/home/CompanyHome';
 import { PersonHeroCard } from '@/components/features/home/PersonHeroCard';
 import { RecentEvents } from '@/components/features/home/RecentEvents';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useMe } from '@/hooks/useMe';
+import { meQueryOptions, useMe } from '@/hooks/useMe';
 import { useWsChannel } from '@/hooks/useWs';
 import type { ContractDto, PersonRatingDto, RatingTransactionDto } from '@kinoacademia/shared';
 import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, createFileRoute } from '@tanstack/react-router';
+import { Link, createFileRoute, redirect } from '@tanstack/react-router';
 import { ClipboardList, Scale, Sparkles } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -24,6 +24,13 @@ const myRatingQueryOptions = queryOptions<PersonRatingDto>({
 const AWAITING_ME: ReadonlySet<ContractDto['statusCode']> = new Set(['sent', 'breakup_sent']);
 
 export const Route = createFileRoute('/_auth/')({
+  // Главная построена вокруг персонажа, а у админа его нет — ведём его в админку.
+  beforeLoad: async ({ context }) => {
+    const me = await context.queryClient.ensureQueryData(meQueryOptions);
+    if (me.user.roleCode === 'admin') {
+      throw redirect({ to: '/admin/users' });
+    }
+  },
   component: HomePage,
 });
 
