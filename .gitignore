@@ -13,5 +13,5 @@ build/
 .turbo/
 coverage/
 *.tsbuildinfo
-storage/
+apps/api/storage/
 .idea/
