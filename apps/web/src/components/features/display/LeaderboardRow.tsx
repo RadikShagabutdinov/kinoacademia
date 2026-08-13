@@ -6,6 +6,8 @@ import { DISPLAY_SCALE, gridTemplate } from './scale';
 type Cell = {
   key: string;
   content: ReactNode;
+  /** Ширина из `COLUMN_WIDTH` — должна совпадать с шириной столбца в шапке борда. */
+  width: string;
   className?: string;
   /** Собственный размер шрифта из шкалы; по умолчанию — размер имени. */
   fontSize?: string;
@@ -26,7 +28,7 @@ export const LeaderboardRow = ({ rank, trackedValue, cells }: LeaderboardRowProp
         'grid items-center gap-[1vw] border-b border-[var(--color-hairline)] px-[1.5vw] py-[0.6vh]',
         flash && 'animate-flash',
       )}
-      style={{ gridTemplateColumns: gridTemplate(cells.length) }}
+      style={{ gridTemplateColumns: gridTemplate(cells.map((c) => c.width)) }}
     >
       {/* Лидер выделен золотом — в макете первое место читается издалека. */}
       <span

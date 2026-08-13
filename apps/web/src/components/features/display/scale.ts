@@ -26,11 +26,20 @@ export const DISPLAY_SCALE = {
   footnote: 'clamp(10px, 0.73vw, 14px)',
 } as const;
 
+/** Ширины столбцов строки лидерборда (без номера места). */
+export const COLUMN_WIDTH = {
+  /** Имя персонажа или название компании — забирает остаток ширины. */
+  name: 'minmax(0, 1fr)',
+  /** Сфера компании. */
+  branch: '14ch',
+  /** Итоговый рейтинг. */
+  value: '12ch',
+  /** Изменение рейтинга со стрелкой и знаком. */
+  delta: '10ch',
+} as const;
+
 /**
- * Ширины колонок лидерборда: номер · название · (подпись) · значение.
- * Подпись есть только у компаний (сфера) — у персонажей её колонки нет.
- *
- * @param cellCount число ячеек строки без номера
+ * Раскладка строки лидерборда: номер места плюс переданные ширины столбцов.
+ * Шапка (`BoardShell`) и строки (`LeaderboardRow`) обязаны получать одни и те же ширины.
  */
-export const gridTemplate = (cellCount: number): string =>
-  ['3ch', 'minmax(0, 1fr)', ...(cellCount > 2 ? ['14ch'] : []), '12ch'].join(' ');
+export const gridTemplate = (widths: readonly string[]): string => ['3ch', ...widths].join(' ');

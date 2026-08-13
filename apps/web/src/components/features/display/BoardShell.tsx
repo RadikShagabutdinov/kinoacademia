@@ -1,11 +1,18 @@
 import type { ReactNode } from 'react';
 import { DISPLAY_SCALE, gridTemplate } from './scale';
 
+export type BoardColumn = {
+  label: string;
+  /** Ширина из `COLUMN_WIDTH` — должна совпадать с шириной ячейки в строке. */
+  width: string;
+  alignRight?: boolean;
+};
+
 type Props = {
   title: string;
   subtitle: string;
-  /** Подписи столбцов после номера — их ровно столько, сколько ячеек в строке. */
-  columns: string[];
+  /** Столбцы после номера — их ровно столько, сколько ячеек в строке. */
+  columns: readonly BoardColumn[];
   children: ReactNode;
 };
 
@@ -33,14 +40,14 @@ export const BoardShell = ({ title, subtitle, columns, children }: Props) => (
     <div
       className="grid items-center gap-[1vw] px-[1.5vw] py-[0.9vh] font-bold uppercase tracking-[0.1em] text-[var(--color-subtle-fg)]"
       style={{
-        gridTemplateColumns: gridTemplate(columns.length),
+        gridTemplateColumns: gridTemplate(columns.map((c) => c.width)),
         fontSize: DISPLAY_SCALE.columnLabel,
       }}
     >
       <span>#</span>
-      {columns.map((label, i) => (
-        <span key={label} className={i === columns.length - 1 ? 'text-right' : undefined}>
-          {label}
+      {columns.map((c) => (
+        <span key={c.label} className={c.alignRight ? 'text-right' : undefined}>
+          {c.label}
         </span>
       ))}
     </div>

@@ -1,8 +1,9 @@
+import { formatAmount } from '@/lib/tone';
 import { BRANCH_LABELS, type BranchCode, type CompanyRatingDto } from '@kinoacademia/shared';
 import { useMemo } from 'react';
-import { BoardShell } from './BoardShell';
+import { type BoardColumn, BoardShell } from './BoardShell';
 import { LeaderboardRow } from './LeaderboardRow';
-import { DISPLAY_SCALE } from './scale';
+import { COLUMN_WIDTH, DISPLAY_SCALE } from './scale';
 
 type CompaniesBoardProps = {
   ratings: CompanyRatingDto[];
@@ -10,7 +11,11 @@ type CompaniesBoardProps = {
   limit: 'top10' | 'all';
 };
 
-const numFmt = (v: number): string => v.toLocaleString('ru-RU');
+const COLUMNS: readonly BoardColumn[] = [
+  { label: 'Компания', width: COLUMN_WIDTH.name },
+  { label: 'Сфера', width: COLUMN_WIDTH.branch },
+  { label: 'Рейтинг', width: COLUMN_WIDTH.value, alignRight: true },
+];
 
 /** Публичный рейтинг компании — сумма постоянных составляющих, как на её экране. */
 const permanentOf = (r: CompanyRatingDto): number =>
@@ -38,7 +43,7 @@ export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) =>
       subtitle={
         limit === 'top10' ? `Топ-${rows.length} из ${sorted.length}` : `Все ${sorted.length}`
       }
-      columns={['Компания', 'Сфера', 'Рейтинг']}
+      columns={COLUMNS}
     >
       {rows.map((row, idx) => {
         const m = meta[row.companyId];
@@ -48,16 +53,23 @@ export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) =>
             rank={idx + 1}
             trackedValue={permanentOf(row)}
             cells={[
-              { key: 'name', content: m?.name ?? '—', className: 'font-bold' },
+              {
+                key: 'name',
+                width: COLUMN_WIDTH.name,
+                content: m?.name ?? '—',
+                className: 'font-bold',
+              },
               {
                 key: 'branch',
+                width: COLUMN_WIDTH.branch,
                 content: m ? BRANCH_LABELS[m.branchCode] : '—',
                 className: 'text-[var(--color-muted-fg)]',
                 fontSize: DISPLAY_SCALE.columnLabel,
               },
               {
                 key: 'permanent',
-                content: numFmt(permanentOf(row)),
+                width: COLUMN_WIDTH.value,
+                content: formatAmount(permanentOf(row)),
                 className:
                   'font-[family-name:var(--font-display)] text-right font-black tabular-nums text-[var(--color-accent)]',
                 fontSize: DISPLAY_SCALE.value,

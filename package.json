@@ -12,7 +12,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "deploy:prod": "./scripts/deploy.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
