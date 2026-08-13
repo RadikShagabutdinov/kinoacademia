@@ -17,18 +17,33 @@ type LeaderboardRowProps = {
   rank: number;
   trackedValue: number;
   cells: Cell[];
+  rankWidth: string;
+  /** Мобильный вид: паддинги в px, потому что `0.6vh` на телефоне — это ~5px. */
+  narrow: boolean;
 };
 
-export const LeaderboardRow = ({ rank, trackedValue, cells }: LeaderboardRowProps) => {
+export const LeaderboardRow = ({
+  rank,
+  trackedValue,
+  cells,
+  rankWidth,
+  narrow,
+}: LeaderboardRowProps) => {
   const flash = useFlashOnChange(trackedValue);
 
   return (
     <div
       className={cn(
-        'grid items-center gap-[1vw] border-b border-[var(--color-hairline)] px-[1.5vw] py-[0.6vh]',
+        'grid items-center border-b border-[var(--color-hairline)]',
+        narrow ? 'gap-2 px-2 py-2.5' : 'gap-[1vw] px-[1.5vw] py-[0.6vh]',
         flash && 'animate-flash',
       )}
-      style={{ gridTemplateColumns: gridTemplate(cells.map((c) => c.width)) }}
+      style={{
+        gridTemplateColumns: gridTemplate(
+          rankWidth,
+          cells.map((c) => c.width),
+        ),
+      }}
     >
       {/* Лидер выделен золотом — в макете первое место читается издалека. */}
       <span

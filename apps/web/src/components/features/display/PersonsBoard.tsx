@@ -4,7 +4,7 @@ import type { PersonRatingDto } from '@kinoacademia/shared';
 import { useMemo } from 'react';
 import { type BoardColumn, BoardShell } from './BoardShell';
 import { LeaderboardRow } from './LeaderboardRow';
-import { COLUMN_WIDTH, DISPLAY_SCALE } from './scale';
+import { COLUMN_WIDTHS, DISPLAY_SCALE, NARROW_COLUMN_WIDTHS } from './scale';
 import { useRotatingPage } from './useRotatingPage';
 
 type PersonsBoardProps = {
@@ -12,13 +12,9 @@ type PersonsBoardProps = {
   meta: Record<string, { displayName: string }>;
   limit: 'top10' | 'all';
   intervalSec: number;
+  /** Мобильный вид: весь список одной прокруткой, без автолистания. */
+  narrow: boolean;
 };
-
-const COLUMNS: readonly BoardColumn[] = [
-  { label: 'Персонаж', width: COLUMN_WIDTH.name },
-  { label: 'Рейтинг', width: COLUMN_WIDTH.value, alignRight: true },
-  { label: 'Изм.', width: COLUMN_WIDTH.delta, alignRight: true },
-];
 
 /** Сколько строк персонажей помещается на экран витрины — размер одной страницы листания. */
 const PAGE_SIZE = 9;
@@ -26,13 +22,20 @@ const PAGE_SIZE = 9;
 /** Стабильные ключи для строк-заполнителей неполной последней страницы. */
 const PAD_KEYS = Array.from({ length: PAGE_SIZE }, (_, i) => `pad-${i}`);
 
-export const PersonsBoard = ({ ratings, meta, limit, intervalSec }: PersonsBoardProps) => {
+export const PersonsBoard = ({ ratings, meta, limit, intervalSec, narrow }: PersonsBoardProps) => {
   const sorted = useMemo(
     () => [...ratings].sort((a, b) => b.nowPermanent - a.nowPermanent),
     [ratings],
   );
 
-  const paged = limit === 'all' && sorted.length > PAGE_SIZE;
+  const widths = narrow ? NARROW_COLUMN_WIDTHS : COLUMN_WIDTHS;
+  const columns: readonly BoardColumn[] = [
+    { label: 'Персонаж', width: widths.name },
+    { label: 'Рейтинг', width: widths.value, alignRight: true },
+    { label: 'Изм.', width: widths.delta, alignRight: true },
+  ];
+
+  const paged = !narrow && limit === 'all' && sorted.length > PAGE_SIZE;
   const page = useRotatingPage(paged ? Math.ceil(sorted.length / PAGE_SIZE) : 1, intervalSec);
 
   const start = paged ? page * PAGE_SIZE : 0;
@@ -49,7 +52,13 @@ export const PersonsBoard = ({ ratings, meta, limit, intervalSec }: PersonsBoard
       : `Все ${sorted.length}`;
 
   return (
-    <BoardShell title="Персонажи" subtitle={subtitle} columns={COLUMNS}>
+    <BoardShell
+      title="Персонажи"
+      subtitle={subtitle}
+      columns={columns}
+      rankWidth={widths.rank}
+      narrow={narrow}
+    >
       {rows.map((row, idx) => {
         const m = meta[row.personId];
         // Разница с предыдущим значением постоянного рейтинга — величина последнего изменения.
@@ -59,10 +68,12 @@ export const PersonsBoard = ({ ratings, meta, limit, intervalSec }: PersonsBoard
             key={row.personId}
             rank={start + idx + 1}
             trackedValue={row.nowPermanent}
+            rankWidth={widths.rank}
+            narrow={narrow}
             cells={[
               {
                 key: 'name',
-                width: COLUMN_WIDTH.name,
+                width: widths.name,
                 content: (
                   <>
                     {m?.displayName ?? '—'}
@@ -73,7 +84,7 @@ export const PersonsBoard = ({ ratings, meta, limit, intervalSec }: PersonsBoard
               },
               {
                 key: 'permanent',
-                width: COLUMN_WIDTH.value,
+                width: widths.value,
                 content: formatAmount(row.nowPermanent),
                 className:
                   'font-[family-name:var(--font-display)] text-right font-black tabular-nums text-[var(--color-accent)]',
@@ -81,7 +92,7 @@ export const PersonsBoard = ({ ratings, meta, limit, intervalSec }: PersonsBoard
               },
               {
                 key: 'delta',
-                width: COLUMN_WIDTH.delta,
+                width: widths.delta,
                 content: delta === 0 ? '—' : `${delta > 0 ? '▲' : '▼'} ${formatSigned(delta)}`,
                 className: cn('text-right font-bold tabular-nums', signedTone(delta)),
               },

@@ -3,24 +3,20 @@ import { BRANCH_LABELS, type BranchCode, type CompanyRatingDto } from '@kinoacad
 import { useMemo } from 'react';
 import { type BoardColumn, BoardShell } from './BoardShell';
 import { LeaderboardRow } from './LeaderboardRow';
-import { COLUMN_WIDTH, DISPLAY_SCALE } from './scale';
+import { COLUMN_WIDTHS, DISPLAY_SCALE, NARROW_COLUMN_WIDTHS } from './scale';
 
 type CompaniesBoardProps = {
   ratings: CompanyRatingDto[];
   meta: Record<string, { name: string; branchCode: BranchCode }>;
   limit: 'top10' | 'all';
+  /** Мобильный вид: список прокручивается, столбцы уже. */
+  narrow: boolean;
 };
-
-const COLUMNS: readonly BoardColumn[] = [
-  { label: 'Компания', width: COLUMN_WIDTH.name },
-  { label: 'Сфера', width: COLUMN_WIDTH.branch },
-  { label: 'Рейтинг', width: COLUMN_WIDTH.value, alignRight: true },
-];
 
 /** На витрине показываем только игровые компании: инфраструктура отеля вне зачёта. */
 const VISIBLE_BRANCHES: readonly BranchCode[] = ['farm', 'cinema'];
 
-export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) => {
+export const CompaniesBoard = ({ ratings, meta, limit, narrow }: CompaniesBoardProps) => {
   const sorted = useMemo(
     () =>
       ratings
@@ -33,13 +29,22 @@ export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) =>
   );
   const rows = limit === 'top10' ? sorted.slice(0, 10) : sorted;
 
+  const widths = narrow ? NARROW_COLUMN_WIDTHS : COLUMN_WIDTHS;
+  const columns: readonly BoardColumn[] = [
+    { label: 'Компания', width: widths.name },
+    { label: 'Сфера', width: widths.branch },
+    { label: 'Рейтинг', width: widths.value, alignRight: true },
+  ];
+
   return (
     <BoardShell
       title="Компании"
       subtitle={
         limit === 'top10' ? `Топ-${rows.length} из ${sorted.length}` : `Все ${sorted.length}`
       }
-      columns={COLUMNS}
+      columns={columns}
+      rankWidth={widths.rank}
+      narrow={narrow}
     >
       {rows.map((row, idx) => {
         const m = meta[row.companyId];
@@ -48,23 +53,25 @@ export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) =>
             key={row.companyId}
             rank={idx + 1}
             trackedValue={row.nowPermanent}
+            rankWidth={widths.rank}
+            narrow={narrow}
             cells={[
               {
                 key: 'name',
-                width: COLUMN_WIDTH.name,
+                width: widths.name,
                 content: m?.name ?? '—',
                 className: 'font-bold',
               },
               {
                 key: 'branch',
-                width: COLUMN_WIDTH.branch,
+                width: widths.branch,
                 content: m ? BRANCH_LABELS[m.branchCode] : '—',
                 className: 'text-[var(--color-muted-fg)]',
                 fontSize: DISPLAY_SCALE.columnLabel,
               },
               {
                 key: 'permanent',
-                width: COLUMN_WIDTH.value,
+                width: widths.value,
                 content: formatAmount(row.nowPermanent),
                 className:
                   'font-[family-name:var(--font-display)] text-right font-black tabular-nums text-[var(--color-accent)]',
