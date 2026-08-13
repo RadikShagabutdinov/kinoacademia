@@ -16,10 +16,19 @@ const numFmt = (v: number): string => v.toLocaleString('ru-RU');
 const permanentOf = (r: CompanyRatingDto): number =>
   r.employeePermanent + r.manualTopup + r.oscar + r.penalties;
 
+/** На витрине показываем только игровые компании: инфраструктура отеля вне зачёта. */
+const VISIBLE_BRANCHES: readonly BranchCode[] = ['farm', 'cinema'];
+
 export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) => {
   const sorted = useMemo(
-    () => [...ratings].sort((a, b) => permanentOf(b) - permanentOf(a)),
-    [ratings],
+    () =>
+      ratings
+        .filter((r) => {
+          const branch = meta[r.companyId]?.branchCode;
+          return branch !== undefined && VISIBLE_BRANCHES.includes(branch);
+        })
+        .sort((a, b) => permanentOf(b) - permanentOf(a)),
+    [ratings, meta],
   );
   const rows = limit === 'top10' ? sorted.slice(0, 10) : sorted;
 

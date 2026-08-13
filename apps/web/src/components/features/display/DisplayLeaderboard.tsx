@@ -55,7 +55,12 @@ export const DisplayLeaderboard = ({ layout, limit, intervalSec }: DisplayLeader
   }
 
   const personsBoard = (
-    <PersonsBoard ratings={data.persons} meta={data.personNames} limit={limit} />
+    <PersonsBoard
+      ratings={data.persons}
+      meta={data.personNames}
+      limit={limit}
+      intervalSec={intervalSec}
+    />
   );
   const companiesBoard = (
     <CompaniesBoard ratings={data.companies} meta={data.companyNames} limit={limit} />

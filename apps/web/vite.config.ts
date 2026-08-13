@@ -5,6 +5,8 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:3000';
+
 export default defineConfig({
   plugins: [
     TanStackRouterVite({
@@ -22,11 +24,14 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // Порт и адрес API переопределяются через env, чтобы рядом с обычным dev-стендом
+    // можно было поднять второй (например, на прод-базу) без конфликта портов.
+    port: Number(process.env.WEB_PORT ?? 5173),
+    strictPort: true,
     proxy: {
-      '/api': 'http://localhost:3000',
-      '/health': 'http://localhost:3000',
-      '/ws': { target: 'ws://localhost:3000', ws: true },
+      '/api': apiTarget,
+      '/health': apiTarget,
+      '/ws': { target: apiTarget.replace(/^http/, 'ws'), ws: true },
     },
   },
   test: {
