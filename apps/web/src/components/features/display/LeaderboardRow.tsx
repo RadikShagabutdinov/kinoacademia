@@ -11,6 +11,8 @@ type Cell = {
   className?: string;
   /** Собственный размер шрифта из шкалы; по умолчанию — размер имени. */
   fontSize?: string;
+  /** Многострочная ячейка (например, название + сфера на телефоне) — без обрезки в одну строку. */
+  wrap?: boolean;
 };
 
 type LeaderboardRowProps = {
@@ -58,7 +60,7 @@ export const LeaderboardRow = ({
       {cells.map((cell) => (
         <span
           key={cell.key}
-          className={cn('truncate', cell.className)}
+          className={cn(cell.wrap ? 'min-w-0' : 'truncate', cell.className)}
           style={{ fontSize: cell.fontSize ?? DISPLAY_SCALE.name }}
         >
           {cell.content}

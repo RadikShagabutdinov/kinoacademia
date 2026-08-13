@@ -30,7 +30,9 @@ export const SwipeBoards = ({ persons, companies }: Props) => {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    // min-w-0 обязателен: иначе flex-элемент растянется по содержимому пейджера
+    // (две панели = двойная ширина) и половина столбцов уедет за край экрана.
+    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3">
       <div className="flex items-center gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)] p-1">
         {TABS.map((label, idx) => (
           <button
@@ -52,10 +54,10 @@ export const SwipeBoards = ({ persons, companies }: Props) => {
       <div
         ref={pagerRef}
         onScroll={onScroll}
-        className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex min-h-0 w-full min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <div className="w-full shrink-0 snap-start">{persons}</div>
-        <div className="w-full shrink-0 snap-start">{companies}</div>
+        <div className="w-full min-w-0 shrink-0 snap-start">{persons}</div>
+        <div className="w-full min-w-0 shrink-0 snap-start">{companies}</div>
       </div>
     </div>
   );

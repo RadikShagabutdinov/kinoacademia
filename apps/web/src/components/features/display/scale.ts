@@ -53,11 +53,11 @@ export const COLUMN_WIDTHS: ColumnWidths = {
  * поэтому фиксируем их в `rem` и ужимаем.
  */
 export const NARROW_COLUMN_WIDTHS: ColumnWidths = {
-  rank: '2.2rem',
+  rank: '2rem',
   name: 'minmax(0, 1fr)',
   branch: '5.5rem',
-  value: '4.6rem',
-  delta: '4.2rem',
+  value: '4.2rem',
+  delta: '4rem',
 };
 
 /**

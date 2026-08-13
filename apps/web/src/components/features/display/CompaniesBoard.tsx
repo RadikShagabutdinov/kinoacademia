@@ -30,11 +30,18 @@ export const CompaniesBoard = ({ ratings, meta, limit, narrow }: CompaniesBoardP
   const rows = limit === 'top10' ? sorted.slice(0, 10) : sorted;
 
   const widths = narrow ? NARROW_COLUMN_WIDTHS : COLUMN_WIDTHS;
-  const columns: readonly BoardColumn[] = [
-    { label: 'Компания', width: widths.name },
-    { label: 'Сфера', width: widths.branch },
-    { label: 'Рейтинг', width: widths.value, alignRight: true },
-  ];
+  // На телефоне отдельный столбец сферы съедал бы треть ширины, поэтому сфера
+  // уходит второй строкой под название компании.
+  const columns: readonly BoardColumn[] = narrow
+    ? [
+        { label: 'Компания', width: widths.name },
+        { label: 'Рейтинг', width: widths.value, alignRight: true },
+      ]
+    : [
+        { label: 'Компания', width: widths.name },
+        { label: 'Сфера', width: widths.branch },
+        { label: 'Рейтинг', width: widths.value, alignRight: true },
+      ];
 
   return (
     <BoardShell
@@ -48,6 +55,7 @@ export const CompaniesBoard = ({ ratings, meta, limit, narrow }: CompaniesBoardP
     >
       {rows.map((row, idx) => {
         const m = meta[row.companyId];
+        const branch = m ? BRANCH_LABELS[m.branchCode] : '—';
         return (
           <LeaderboardRow
             key={row.companyId}
@@ -56,19 +64,40 @@ export const CompaniesBoard = ({ ratings, meta, limit, narrow }: CompaniesBoardP
             rankWidth={widths.rank}
             narrow={narrow}
             cells={[
-              {
-                key: 'name',
-                width: widths.name,
-                content: m?.name ?? '—',
-                className: 'font-bold',
-              },
-              {
-                key: 'branch',
-                width: widths.branch,
-                content: m ? BRANCH_LABELS[m.branchCode] : '—',
-                className: 'text-[var(--color-muted-fg)]',
-                fontSize: DISPLAY_SCALE.columnLabel,
-              },
+              narrow
+                ? {
+                    key: 'name',
+                    width: widths.name,
+                    wrap: true,
+                    content: (
+                      <>
+                        <span className="block truncate font-bold">{m?.name ?? '—'}</span>
+                        <span
+                          className="block truncate text-[var(--color-muted-fg)]"
+                          style={{ fontSize: DISPLAY_SCALE.columnLabel }}
+                        >
+                          {branch}
+                        </span>
+                      </>
+                    ),
+                  }
+                : {
+                    key: 'name',
+                    width: widths.name,
+                    content: m?.name ?? '—',
+                    className: 'font-bold',
+                  },
+              ...(narrow
+                ? []
+                : [
+                    {
+                      key: 'branch',
+                      width: widths.branch,
+                      content: branch,
+                      className: 'text-[var(--color-muted-fg)]',
+                      fontSize: DISPLAY_SCALE.columnLabel,
+                    },
+                  ]),
               {
                 key: 'permanent',
                 width: widths.value,
