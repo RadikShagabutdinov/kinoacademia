@@ -59,6 +59,8 @@ export const toPersonRatingAdminDto = (
 export const toCompanyRatingDto = (row: CompanyRatingRow): CompanyRatingDto => ({
   companyId: row.companyId,
   budget: row.budget,
+  nowPermanent: row.nowPermanent,
+  lastPermanent: row.lastPermanent,
   employeePermanent: row.employeePermanent,
   manualTopup: row.manualTopup,
   oscar: row.oscar,
@@ -78,6 +80,43 @@ export const toTransactionDto = (row: RatingTransactionRow): RatingTransactionDt
   authorUserId: row.authorUserId,
   createdAt: row.createdAt.toISOString(),
 });
+
+/**
+ * Начисление персонажу с переносом изменения постоянного рейтинга в капитализацию
+ * его компании: постоянный рейтинг компании складывается из рейтингов сотрудников
+ * на постоянном контракте, поэтому любое их изменение отражается сразу, не дожидаясь
+ * 12-часовой капитализации. Правки только переменного рейтинга (`generated`) на
+ * компанию не влияют — сравнивается именно `nowPermanent`.
+ *
+ * Возвращает компанию, которую задело начисление, чтобы вызывающий код отправил ей
+ * WS-событие после коммита транзакции.
+ */
+const applyPersonDeltaPropagating = async (
+  exec: DbExecutor,
+  personId: string,
+  delta: repo.PersonRatingDelta,
+): Promise<{ row: PersonRatingRow; companyId: string | null }> => {
+  const before = await repo.ensurePersonRating(exec, personId);
+  const row = await repo.applyPersonDelta(exec, personId, delta);
+  const diff = row.nowPermanent - before.nowPermanent;
+  if (diff === 0) return { row, companyId: null };
+
+  const companyId = await repo.findActivePermanentCompanyId(exec, personId);
+  if (!companyId) return { row, companyId: null };
+
+  await repo.applyCompanyDelta(exec, companyId, { employeePermanent: diff });
+  await repo.insertTransaction(exec, {
+    donorPersonId: personId,
+    recipientCompanyId: companyId,
+    amount: diff,
+    kind: 'generated',
+    // Нейтральная формулировка: в истории компании не должно быть видно, какая
+    // именно механика (в том числе скрытый мастерский модификатор) сдвинула рейтинг.
+    comment: 'Изменение постоянного рейтинга сотрудника',
+    authorUserId: null,
+  });
+  return { row, companyId };
+};
 
 const isPersonStar = async (exec: DbExecutor, row: PersonRatingRow): Promise<boolean> => {
   const hasContract = await repo.findActivePermanentByPersonId(exec, row.personId);
@@ -117,9 +156,10 @@ export const expressAdmiration = async (
     const updatedDonor = await repo.applyPersonDelta(tx, input.donorPersonId, {
       generated: -input.amount,
     });
-    const updatedRecipient = await repo.applyPersonDelta(tx, input.recipientPersonId, {
+    const recipient = await applyPersonDeltaPropagating(tx, input.recipientPersonId, {
       systemTopup: credit,
     });
+    const updatedRecipient = recipient.row;
 
     const txRow = await repo.insertTransaction(tx, {
       donorPersonId: input.donorPersonId,
@@ -130,11 +170,17 @@ export const expressAdmiration = async (
       authorUserId: input.actorUserId,
     });
 
-    return { donor: updatedDonor, recipient: updatedRecipient, tx: txRow };
+    return {
+      donor: updatedDonor,
+      recipient: updatedRecipient,
+      tx: txRow,
+      companyId: recipient.companyId,
+    };
   });
 
   emitPerson(input.donorPersonId);
   emitPerson(input.recipientPersonId);
+  if (result.companyId) emitCompany(result.companyId);
   return result;
 };
 
@@ -159,8 +205,7 @@ const resolveManualAmount = async (
   }
 
   const row = await repo.ensureCompanyRating(exec, target.companyId);
-  const base = row.employeePermanent + row.manualTopup + row.oscar - row.penalties;
-  return resolvePercentAmount(amount, base);
+  return resolvePercentAmount(amount, row.nowPermanent);
 };
 
 export type PersonManualKind = 'manual' | 'oscar' | 'penalty' | 'base';
@@ -192,8 +237,12 @@ const manualPersonOn = async (
   exec: DbExecutor,
   input: ManualPersonInput,
   kind: PersonManualKind,
-): Promise<{ row: PersonRatingRow; tx: RatingTransactionRow }> => {
-  const row = await repo.applyPersonDelta(exec, input.personId, personDeltaFor(kind, input.amount));
+): Promise<{ row: PersonRatingRow; tx: RatingTransactionRow; companyId: string | null }> => {
+  const { row, companyId } = await applyPersonDeltaPropagating(
+    exec,
+    input.personId,
+    personDeltaFor(kind, input.amount),
+  );
   const txRow = await repo.insertTransaction(exec, {
     recipientPersonId: input.personId,
     amount: input.amount,
@@ -201,7 +250,7 @@ const manualPersonOn = async (
     comment: input.comment ?? null,
     authorUserId: input.actorUserId,
   });
-  return { row, tx: txRow };
+  return { row, tx: txRow, companyId };
 };
 
 export const manualPersonTransaction = async (
@@ -220,6 +269,7 @@ export const manualPersonTransaction = async (
   const result = input.exec ? await run(input.exec) : await db.transaction((tx) => run(tx));
 
   emitPerson(input.personId);
+  if (result.companyId) emitCompany(result.companyId);
   return result;
 };
 
@@ -307,11 +357,17 @@ export type ContractBreakPenaltyInput = {
   exec?: DbExecutor;
 };
 
+/**
+ * Штраф списывается с персонажа и зачисляется компании. Перенос в капитализацию
+ * тут не срабатывает: контракт к этому моменту уже разорван (`endedAt` проставлен
+ * до вызова штрафа в contracts.service), так что списание персонажа компанию не
+ * тянет вниз — она получает только сам штраф.
+ */
 const applyContractBreakPenaltyOn = async (
   exec: DbExecutor,
   input: ContractBreakPenaltyInput,
 ): Promise<void> => {
-  await repo.applyPersonDelta(exec, input.personId, { penalties: input.amount });
+  await applyPersonDeltaPropagating(exec, input.personId, { penalties: input.amount });
   await repo.applyCompanyDelta(exec, input.companyId, { penalties: input.amount });
   await repo.insertTransaction(exec, {
     donorPersonId: input.personId,
@@ -354,10 +410,13 @@ export const randomizerApply = async (input: RandomizerApplyInput): Promise<Pers
 
   const updated = await db.transaction(async (tx) => {
     const rows: PersonRatingRow[] = [];
+    const companyIds = new Set<string>();
     for (const entry of input.values) {
       const current = await repo.ensurePersonRating(tx, entry.personId);
       const delta = entry.value - current.randomizer;
-      const row = await repo.applyPersonDelta(tx, entry.personId, { randomizer: delta });
+      const { row, companyId } = await applyPersonDeltaPropagating(tx, entry.personId, {
+        randomizer: delta,
+      });
       await repo.insertTransaction(tx, {
         recipientPersonId: entry.personId,
         amount: delta,
@@ -366,22 +425,27 @@ export const randomizerApply = async (input: RandomizerApplyInput): Promise<Pers
         authorUserId: input.actorUserId,
       });
       rows.push(row);
+      if (companyId) companyIds.add(companyId);
     }
-    return rows;
+    return { rows, companyIds };
   });
 
-  for (const r of updated) emitPerson(r.personId);
-  return updated;
+  for (const r of updated.rows) emitPerson(r.personId);
+  for (const companyId of updated.companyIds) emitCompany(companyId);
+  return updated.rows;
 };
 
 export const randomizerCancel = async (actorUserId: string): Promise<PersonRatingRow[]> => {
   const updated = await db.transaction(async (tx) => {
     const all = await repo.listAllPersonRatings(tx);
     const rows: PersonRatingRow[] = [];
+    const companyIds = new Set<string>();
     for (const current of all) {
       if (current.randomizer === 0) continue;
       const delta = -current.randomizer;
-      const row = await repo.applyPersonDelta(tx, current.personId, { randomizer: delta });
+      const { row, companyId } = await applyPersonDeltaPropagating(tx, current.personId, {
+        randomizer: delta,
+      });
       await repo.insertTransaction(tx, {
         recipientPersonId: current.personId,
         amount: delta,
@@ -390,12 +454,41 @@ export const randomizerCancel = async (actorUserId: string): Promise<PersonRatin
         authorUserId: actorUserId,
       });
       rows.push(row);
+      if (companyId) companyIds.add(companyId);
     }
-    return rows;
+    return { rows, companyIds };
   });
 
-  for (const r of updated) emitPerson(r.personId);
-  return updated;
+  for (const r of updated.rows) emitPerson(r.personId);
+  for (const companyId of updated.companyIds) emitCompany(companyId);
+  return updated.rows;
+};
+
+/**
+ * Начисление капитализации компаниям (джоба `capitalize_companies`): начисления
+ * накопительные, поэтому в журнал и в `employee_permanent` идёт именно прибавка.
+ */
+export const applyCapitalization = async (
+  entries: Array<{ companyId: string; amount: number }>,
+): Promise<number> => {
+  const credited = entries.filter((e) => e.amount !== 0);
+  if (credited.length === 0) return 0;
+
+  await db.transaction(async (tx) => {
+    for (const entry of credited) {
+      await repo.applyCompanyDelta(tx, entry.companyId, { employeePermanent: entry.amount });
+      await repo.insertTransaction(tx, {
+        recipientCompanyId: entry.companyId,
+        amount: entry.amount,
+        kind: 'generated',
+        comment: 'Капитализация сотрудников',
+        authorUserId: null,
+      });
+    }
+  });
+
+  for (const entry of credited) emitCompany(entry.companyId);
+  return credited.length;
 };
 
 export const getPersonRating = async (

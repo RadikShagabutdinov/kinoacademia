@@ -17,10 +17,6 @@ const COLUMNS: readonly BoardColumn[] = [
   { label: 'Рейтинг', width: COLUMN_WIDTH.value, alignRight: true },
 ];
 
-/** Публичный рейтинг компании — сумма постоянных составляющих, как на её экране. */
-const permanentOf = (r: CompanyRatingDto): number =>
-  r.employeePermanent + r.manualTopup + r.oscar + r.penalties;
-
 /** На витрине показываем только игровые компании: инфраструктура отеля вне зачёта. */
 const VISIBLE_BRANCHES: readonly BranchCode[] = ['farm', 'cinema'];
 
@@ -32,7 +28,7 @@ export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) =>
           const branch = meta[r.companyId]?.branchCode;
           return branch !== undefined && VISIBLE_BRANCHES.includes(branch);
         })
-        .sort((a, b) => permanentOf(b) - permanentOf(a)),
+        .sort((a, b) => b.nowPermanent - a.nowPermanent),
     [ratings, meta],
   );
   const rows = limit === 'top10' ? sorted.slice(0, 10) : sorted;
@@ -51,7 +47,7 @@ export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) =>
           <LeaderboardRow
             key={row.companyId}
             rank={idx + 1}
-            trackedValue={permanentOf(row)}
+            trackedValue={row.nowPermanent}
             cells={[
               {
                 key: 'name',
@@ -69,7 +65,7 @@ export const CompaniesBoard = ({ ratings, meta, limit }: CompaniesBoardProps) =>
               {
                 key: 'permanent',
                 width: COLUMN_WIDTH.value,
-                content: formatAmount(permanentOf(row)),
+                content: formatAmount(row.nowPermanent),
                 className:
                   'font-[family-name:var(--font-display)] text-right font-black tabular-nums text-[var(--color-accent)]',
                 fontSize: DISPLAY_SCALE.value,

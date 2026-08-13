@@ -86,10 +86,15 @@ function InfoRatingsPage() {
         cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
       },
       { accessorKey: 'branchLabel', header: 'Сфера' },
+      {
+        accessorKey: 'nowPermanent',
+        header: 'Постоянный',
+        cell: ({ getValue }) => numCell(getValue()),
+      },
       { accessorKey: 'budget', header: 'Бюджет', cell: ({ getValue }) => numCell(getValue()) },
       {
         accessorKey: 'employeePermanent',
-        header: 'Постоянный',
+        header: 'Капитализация',
         cell: ({ getValue }) => numCell(getValue()),
       },
       { accessorKey: 'manualTopup', header: 'Ручные', cell: ({ getValue }) => numCell(getValue()) },

@@ -26,6 +26,8 @@ export const companyRatings = pgTable('company_ratings', {
     .primaryKey()
     .references(() => companies.id, { onDelete: 'cascade' }),
   budget: integer().notNull().default(0),
+  nowPermanent: integer().notNull().default(0),
+  lastPermanent: integer().notNull().default(0),
   employeePermanent: integer().notNull().default(0),
   manualTopup: integer().notNull().default(0),
   oscar: integer().notNull().default(0),

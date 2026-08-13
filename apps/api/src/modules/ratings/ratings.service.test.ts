@@ -6,6 +6,8 @@ const personRows = new Map<string, PersonRatingRow>();
 const companyRows = new Map<string, CompanyRatingRow>();
 const transactions: RatingTransactionRow[] = [];
 const personHasContract = new Map<string, boolean>();
+/** personId → компания активного постоянного контракта (для переноса рейтинга). */
+const personCompany = new Map<string, string>();
 
 vi.mock('../../db/client', () => {
   const fakeDb = {
@@ -43,6 +45,8 @@ const seedCompany = (overrides: Partial<CompanyRatingRow> = {}): CompanyRatingRo
   const row: CompanyRatingRow = {
     companyId,
     budget: 0,
+    nowPermanent: 0,
+    lastPermanent: 0,
     employeePermanent: 0,
     manualTopup: 0,
     oscar: 0,
@@ -105,6 +109,15 @@ vi.mock('./ratings-repo', () => ({
       penalties: cur.penalties + (delta.penalties ?? 0),
       updatedAt: new Date(),
     };
+    const touchedPermanent =
+      delta.employeePermanent !== undefined ||
+      delta.manualTopup !== undefined ||
+      delta.oscar !== undefined ||
+      delta.penalties !== undefined;
+    if (touchedPermanent) {
+      next.lastPermanent = cur.nowPermanent;
+      next.nowPermanent = next.employeePermanent + next.manualTopup + next.oscar + next.penalties;
+    }
     companyRows.set(companyId, next);
     return { ...next };
   },
@@ -157,6 +170,8 @@ vi.mock('./ratings-repo', () => ({
       .map((t) => ({ ...t })),
   findActivePermanentByPersonId: async (_e: unknown, personId: string) =>
     personHasContract.get(personId) ?? false,
+  findActivePermanentCompanyId: async (_e: unknown, personId: string) =>
+    personCompany.get(personId) ?? null,
 }));
 
 import * as service from './ratings.service';
@@ -168,7 +183,14 @@ beforeEach(() => {
   companyRows.clear();
   transactions.length = 0;
   personHasContract.clear();
+  personCompany.clear();
 });
+
+/** Персонаж на постоянном контракте: его рейтинг капитализируется компанией. */
+const hireToCompany = (personId: string, companyId: string): void => {
+  personHasContract.set(personId, true);
+  personCompany.set(personId, companyId);
+};
 
 describe('expressAdmiration', () => {
   it('×1 when neither donor nor recipient is Star', async () => {
@@ -390,7 +412,7 @@ describe('секретность рандомайзера', () => {
 describe('contract break penalty', () => {
   it('subtracts from person and adds to company rating', async () => {
     const p = seedPerson({ base: 200, nowPermanent: 200 });
-    const c = seedCompany({ employeePermanent: 100 });
+    const c = seedCompany({ employeePermanent: 100, nowPermanent: 100 });
     await service.applyContractBreakPenalty({
       personId: p.personId,
       companyId: c.companyId,
@@ -402,11 +424,119 @@ describe('contract break penalty', () => {
     expect(personAfter?.penalties).toBe(100);
     expect(personAfter?.nowPermanent).toBe(100);
     expect(companyAfter?.penalties).toBe(100);
+    // Контракт к моменту штрафа уже разорван, поэтому падение рейтинга персонажа
+    // не тянет капитализацию вниз — компания получает только сам штраф.
+    expect(companyAfter?.employeePermanent).toBe(100);
+    expect(companyAfter?.nowPermanent).toBe(200);
+    expect(companyAfter?.lastPermanent).toBe(100);
     expect(transactions.find((t) => t.kind === 'penalty')).toMatchObject({
       donorPersonId: p.personId,
       recipientCompanyId: c.companyId,
       amount: 100,
     });
+  });
+});
+
+describe('перенос постоянного рейтинга сотрудника в компанию', () => {
+  it('начисление сотруднику сразу двигает постоянный рейтинг компании', async () => {
+    const c = seedCompany({ employeePermanent: 40, nowPermanent: 40 });
+    const p = seedPerson({ base: 10, nowPermanent: 10 });
+    hireToCompany(p.personId, c.companyId);
+
+    await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: 25,
+      actorUserId: ACTOR,
+    });
+
+    const companyAfter = companyRows.get(c.companyId);
+    expect(companyAfter?.employeePermanent).toBe(65);
+    expect(companyAfter?.nowPermanent).toBe(65);
+    expect(companyAfter?.lastPermanent).toBe(40);
+    expect(transactions.find((t) => t.recipientCompanyId === c.companyId)).toMatchObject({
+      kind: 'generated',
+      amount: 25,
+    });
+  });
+
+  it('списание сотруднику уменьшает рейтинг компании на ту же величину', async () => {
+    const c = seedCompany({ employeePermanent: 100, nowPermanent: 100 });
+    const p = seedPerson({ manualTopup: 50, nowPermanent: 50 });
+    hireToCompany(p.personId, c.companyId);
+
+    await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: -20,
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(c.companyId)?.nowPermanent).toBe(80);
+  });
+
+  it('рандомайзер сотрудника отражается на компании сразу, отмена — откатывает', async () => {
+    const c = seedCompany();
+    const p = seedPerson();
+    hireToCompany(p.personId, c.companyId);
+
+    await service.randomizerApply({
+      values: [{ personId: p.personId, value: 15 }],
+      actorUserId: ACTOR,
+    });
+    expect(companyRows.get(c.companyId)?.nowPermanent).toBe(15);
+
+    await service.randomizerCancel(ACTOR);
+    expect(companyRows.get(c.companyId)?.nowPermanent).toBe(0);
+  });
+
+  it('персонаж без постоянного контракта компанию не задевает', async () => {
+    const c = seedCompany({ employeePermanent: 10, nowPermanent: 10 });
+    const p = seedPerson();
+
+    await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: 99,
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(c.companyId)?.nowPermanent).toBe(10);
+  });
+
+  it('перевод восхищения меняет только постоянный рейтинг: донор компанию не тянет', async () => {
+    const donorCompany = seedCompany({ employeePermanent: 30, nowPermanent: 30 });
+    const donor = seedPerson({ generated: 10 });
+    hireToCompany(donor.personId, donorCompany.companyId);
+    const recipient = seedPerson();
+
+    await service.expressAdmiration({
+      donorPersonId: donor.personId,
+      recipientPersonId: recipient.personId,
+      amount: 4,
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(donorCompany.companyId)?.nowPermanent).toBe(30);
+  });
+});
+
+describe('applyCapitalization', () => {
+  it('накопительно прибавляет к капитализации и пишет журнал', async () => {
+    const c = seedCompany({ employeePermanent: 100, nowPermanent: 100 });
+
+    await service.applyCapitalization([{ companyId: c.companyId, amount: 140 }]);
+    await service.applyCapitalization([{ companyId: c.companyId, amount: 140 }]);
+
+    const after = companyRows.get(c.companyId);
+    expect(after?.employeePermanent).toBe(380);
+    expect(after?.nowPermanent).toBe(380);
+    expect(after?.lastPermanent).toBe(240);
+    expect(transactions.filter((t) => t.comment === 'Капитализация сотрудников')).toHaveLength(2);
+  });
+
+  it('нулевые начисления не попадают в журнал', async () => {
+    const c = seedCompany();
+    const credited = await service.applyCapitalization([{ companyId: c.companyId, amount: 0 }]);
+    expect(credited).toBe(0);
+    expect(transactions).toHaveLength(0);
   });
 });
 

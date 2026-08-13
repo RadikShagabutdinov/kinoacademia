@@ -6,6 +6,13 @@ import { IsoDateTime, Uuid } from './common';
 export const BREAKUP_PENALTY = 100;
 
 /**
+ * Потолок вклада одного сотрудника в одно начисление капитализации компании.
+ * Ограничение защищает от гиперкапитализации: Звезда с рейтингом 1000 приносит
+ * компании те же 100 пунктов за начисление, что и сотрудник со 100.
+ */
+export const CAPITALIZATION_PER_EMPLOYEE_CAP = 100;
+
+/**
  * Пороговые значения постоянного рейтинга для статуса «Звезда».
  * См. PROJECT.md → раздел «Статус Звезда».
  */
@@ -76,9 +83,16 @@ export const PersonRatingSummaryDto = z.object({
 });
 export type PersonRatingSummaryDto = z.infer<typeof PersonRatingSummaryDto>;
 
+/**
+ * `nowPermanent` — постоянный рейтинг компании (капитализация + ручные + Оскар +
+ * штрафы, полученные при разрыве контрактов); `lastPermanent` — его значение до
+ * последней операции. `budget` в постоянный рейтинг не входит.
+ */
 export const CompanyRatingDto = z.object({
   companyId: Uuid,
   budget: z.number().int(),
+  nowPermanent: z.number().int(),
+  lastPermanent: z.number().int(),
   employeePermanent: z.number().int(),
   manualTopup: z.number().int(),
   oscar: z.number().int(),

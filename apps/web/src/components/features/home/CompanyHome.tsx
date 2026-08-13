@@ -56,7 +56,6 @@ export const CompanyHome = ({ company }: Props) => {
         { label: 'Штрафы', value: rating.penalties },
       ]
     : [];
-  const permanentTotal = rows.reduce((sum, r) => sum + r.value, 0);
   const maxRow = Math.max(1, ...rows.map((r) => Math.abs(r.value)));
 
   return (
@@ -71,7 +70,7 @@ export const CompanyHome = ({ company }: Props) => {
           <div>
             <SectionLabel>Рейтинг компании</SectionLabel>
             <DisplayNumber size="lg" className="mt-1.5 text-[var(--color-accent)]">
-              {formatAmount(permanentTotal)}
+              {formatAmount(rating?.nowPermanent ?? 0)}
             </DisplayNumber>
           </div>
           <div className="text-right">

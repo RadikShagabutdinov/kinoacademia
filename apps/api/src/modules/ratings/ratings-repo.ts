@@ -22,6 +22,8 @@ export type PersonRatingRow = {
 export type CompanyRatingRow = {
   companyId: string;
   budget: number;
+  nowPermanent: number;
+  lastPermanent: number;
   employeePermanent: number;
   manualTopup: number;
   oscar: number;
@@ -60,6 +62,8 @@ const toPersonRow = (r: typeof personRatings.$inferSelect): PersonRatingRow => (
 const toCompanyRow = (r: typeof companyRatings.$inferSelect): CompanyRatingRow => ({
   companyId: r.companyId,
   budget: r.budget,
+  nowPermanent: r.nowPermanent,
+  lastPermanent: r.lastPermanent,
   employeePermanent: r.employeePermanent,
   manualTopup: r.manualTopup,
   oscar: r.oscar,
@@ -266,9 +270,22 @@ export const updateCompanyRatingAbsolute = async (
     oscar: patch.oscar ?? current.oscar,
     penalties: patch.penalties ?? current.penalties,
   };
+  // Бюджет не входит в постоянный рейтинг, поэтому его правка не сдвигает now/last.
+  const touchedPermanent =
+    patch.employeePermanent !== undefined ||
+    patch.manualTopup !== undefined ||
+    patch.oscar !== undefined ||
+    patch.penalties !== undefined;
   const rows = await exec
     .update(companyRatings)
-    .set({ ...next, updatedAt: sql`now()` })
+    .set({
+      ...next,
+      ...(touchedPermanent && {
+        lastPermanent: current.nowPermanent,
+        nowPermanent: calcCompanyNowPermanent(next),
+      }),
+      updatedAt: sql`now()`,
+    })
     .where(eq(companyRatings.companyId, companyId))
     .returning();
   if (!rows[0]) throw new Error('Company rating disappeared during update');
@@ -396,6 +413,29 @@ export const listPersonIdsWithActivePermanent = async (exec: DbExecutor): Promis
     .from(permanentContracts)
     .where(and(eq(permanentContracts.statusCode, 'confirmed'), isNull(permanentContracts.endedAt)));
   return new Set(rows.map((r) => r.personId));
+};
+
+/**
+ * Компания активного постоянного контракта персонажа — нужна, чтобы изменение его
+ * постоянного рейтинга сразу переносилось в капитализацию работодателя.
+ */
+export const findActivePermanentCompanyId = async (
+  exec: DbExecutor,
+  personId: string,
+): Promise<string | null> => {
+  const { permanentContracts } = await import('../../db/schema');
+  const rows = await exec
+    .select({ companyId: permanentContracts.companyId })
+    .from(permanentContracts)
+    .where(
+      and(
+        eq(permanentContracts.personId, personId),
+        eq(permanentContracts.statusCode, 'confirmed'),
+        isNull(permanentContracts.endedAt),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.companyId ?? null;
 };
 
 export const findActivePermanentByPersonId = async (

@@ -5,8 +5,10 @@ import {
   ApiError,
   BREAKUP_PENALTY,
   BranchCode,
+  CAPITALIZATION_PER_EMPLOYEE_CAP,
   CONTRACT_TRANSITIONS,
   CompanyDto,
+  CompanyRatingDto,
   ContractActionInput,
   ContractDto,
   ContractErrorCode,
@@ -237,6 +239,26 @@ describe('contract state machine', () => {
   it('exports BREAKUP_PENALTY constant', () => {
     expect(typeof BREAKUP_PENALTY).toBe('number');
     expect(BREAKUP_PENALTY).toBeGreaterThan(0);
+  });
+
+  it('exports CAPITALIZATION_PER_EMPLOYEE_CAP constant', () => {
+    expect(typeof CAPITALIZATION_PER_EMPLOYEE_CAP).toBe('number');
+    expect(CAPITALIZATION_PER_EMPLOYEE_CAP).toBeGreaterThan(0);
+  });
+
+  it('CompanyRatingDto carries now/last permanent', () => {
+    const parsed = CompanyRatingDto.safeParse({
+      companyId: UUID,
+      budget: 10,
+      nowPermanent: 240,
+      lastPermanent: 100,
+      employeePermanent: 200,
+      manualTopup: 0,
+      oscar: 20,
+      penalties: 20,
+      updatedAt: NOW,
+    });
+    expect(parsed.success).toBe(true);
   });
 
   it('parses ContractStatusHistoryDto and query', () => {
