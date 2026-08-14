@@ -9,7 +9,7 @@ import type {
 } from '@kinoacademia/shared';
 
 export const listJobs = (): Promise<JobDefinitionWithLastRunDto[]> =>
-  api.get<JobDefinitionWithLastRunDto[]>('/admin/jobs/');
+  api.get<JobDefinitionWithLastRunDto[]>('/admin/jobs');
 
 export const getJob = (key: JobKey): Promise<JobDefinitionWithLastRunDto> =>
   api.get<JobDefinitionWithLastRunDto>(`/admin/jobs/${key}`);

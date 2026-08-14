@@ -133,7 +133,9 @@ export const JobsList = () => {
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-[var(--color-muted-fg)]">
-                  Нет задач.
+                  {query.isError
+                    ? getApiErrorMessage(query.error, 'Не удалось загрузить задачи')
+                    : 'Нет задач.'}
                 </TableCell>
               </TableRow>
             )}
