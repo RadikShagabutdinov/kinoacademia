@@ -24,6 +24,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'job.run_now': 'Ручной запуск задачи',
   'film.create': 'Создан фильм',
   'film.assignment.create': 'Добавлен участник фильма',
+  'film.assignment.delete': 'Удалён участник фильма',
   'oscar.nominate': 'Подана номинация',
   'oscar.award': 'Вручён Оскар',
   'scan.upload': 'Загружены сканы',

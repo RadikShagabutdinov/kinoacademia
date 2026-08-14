@@ -8,13 +8,18 @@ import type {
   FilmRole,
   FilmWithAssignmentsDto,
 } from '@kinoacademia/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../../db/client';
-import { persons } from '../../db/schema';
+import { oscars, persons } from '../../db/schema';
 import { findCompanyById } from '../companies/companies-repo';
 import { FilmError } from './errors';
 import * as repo from './films-repo';
-import type { FilmAssignmentDetailRow, FilmRow, FilmWithCompanyRow } from './films-repo';
+import type {
+  FilmAssignmentDetailRow,
+  FilmAssignmentRow,
+  FilmRow,
+  FilmWithCompanyRow,
+} from './films-repo';
 
 export type CreateFilmServiceInput = CreateFilmInput;
 export type CreateFilmAssignmentServiceInput = CreateFilmAssignmentInput;
@@ -115,6 +120,32 @@ export const addAssignment = async (
       assignment: { ...inserted, personName: personRows[0].displayName },
       film,
     };
+  });
+};
+
+export const removeAssignment = async (
+  filmId: string,
+  assignmentId: string,
+): Promise<FilmAssignmentRow> => {
+  return db.transaction(async (tx) => {
+    const assignment = await repo.findAssignmentById(tx, assignmentId);
+    if (!assignment || assignment.filmId !== filmId) {
+      throw new FilmError('assignment_not_found', 'Assignment not found');
+    }
+
+    // Номинация ссылается на пару (фильм, персонаж): убрав участника, мы бы
+    // оставили номинацию без подтверждающего назначения в съёмочной группе.
+    const nominated = await tx
+      .select({ id: oscars.id })
+      .from(oscars)
+      .where(and(eq(oscars.filmId, filmId), eq(oscars.personId, assignment.personId)))
+      .limit(1);
+    if (nominated[0]) {
+      throw new FilmError('assignment_nominated', 'Person has an Oscar nomination for this film');
+    }
+
+    await repo.deleteAssignment(tx, assignmentId);
+    return assignment;
   });
 };
 

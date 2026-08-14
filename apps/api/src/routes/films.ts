@@ -68,6 +68,7 @@ const ensureCompanyAccess = async (c: Context, companyId: string) => {
 
 const FilmIdParam = z.object({ id: Uuid });
 const CompanyIdParam = z.object({ companyId: Uuid });
+const AssignmentIdParam = z.object({ id: Uuid, assignmentId: Uuid });
 
 const createFilmRoute = createRoute({
   middleware: [requireRole('head', 'admin')] as const,
@@ -120,6 +121,25 @@ const addAssignmentRoute = createRoute({
         'application/json': { schema: FilmAssignmentDetailDto.openapi('FilmAssignmentDetailDto') },
       },
     },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: errorResponses[409],
+  },
+});
+
+const removeAssignmentRoute = createRoute({
+  middleware: [requireRole('head', 'admin')] as const,
+  method: 'delete',
+  path: '/:id/assignments/:assignmentId',
+  tags: ['films'],
+  summary: 'Remove film participant',
+  description: 'Remove a person from the film crew. Head (own company) / admin.',
+  security: [{ cookieAuth: [] }],
+  request: { params: AssignmentIdParam },
+  responses: {
+    204: { description: 'Assignment removed' },
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
@@ -245,6 +265,32 @@ filmsRoutes.openapi(addAssignmentRoute, async (c) => {
       payload: { personId: data.personId, role: data.role },
     });
     return c.json(films.toAssignmentDetailDto(assignment), 201);
+  } catch (err) {
+    return handleFilmError(c, err);
+  }
+});
+
+filmsRoutes.openapi(removeAssignmentRoute, async (c) => {
+  const { id, assignmentId } = c.req.valid('param');
+  const user = c.get('user');
+  try {
+    const film = await films.findFilmById(id);
+    if (!film) return apiError(c, 404, { code: 'not_found', message: 'Film not found' });
+
+    if (user.role === 'head') {
+      const owns = await ownsCompany(db, user.id, film.companyId);
+      if (!owns) return apiError(c, 403, { code: 'forbidden', message: 'Not your company' });
+    }
+
+    const removed = await films.removeAssignment(id, assignmentId);
+    await writeAudit({
+      actorUserId: user.id,
+      action: 'film.assignment.delete',
+      entityType: 'film',
+      entityId: id,
+      payload: { personId: removed.personId, role: removed.role },
+    });
+    return c.body(null, 204);
   } catch (err) {
     return handleFilmError(c, err);
   }

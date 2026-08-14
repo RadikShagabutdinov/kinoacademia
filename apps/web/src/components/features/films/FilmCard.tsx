@@ -1,13 +1,21 @@
-import { type FilmListItem, getFilm } from '@/api/films';
+import { type FilmListItem, getFilm, removeAssignment } from '@/api/films';
 import { listFilmOscars } from '@/api/oscars';
+import { ConfirmDangerDialog } from '@/components/features/admin/ConfirmDangerDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
-import { FILM_ROLES, FILM_ROLE_LABELS } from '@kinoacademia/shared';
-import { useQuery } from '@tanstack/react-query';
-import { Clapperboard } from 'lucide-react';
+import { NoticeBox } from '@/components/ui/notice-box';
+import {
+  FILM_ROLES,
+  FILM_ROLE_LABELS,
+  type FilmAssignmentDetailDto,
+  type FilmRole,
+} from '@kinoacademia/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Clapperboard, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AddAssignmentDialog } from './AddAssignmentDialog';
+import { getFilmErrorMessage } from './filmErrors';
 
 type Props = {
   film: FilmListItem;
@@ -15,8 +23,22 @@ type Props = {
   canEdit: boolean;
 };
 
+const groupByRole = (
+  assignments: FilmAssignmentDetailDto[],
+): Map<FilmRole, FilmAssignmentDetailDto[]> => {
+  const map = new Map<FilmRole, FilmAssignmentDetailDto[]>();
+  for (const a of assignments) {
+    const list = map.get(a.role);
+    if (list) list.push(a);
+    else map.set(a.role, [a]);
+  }
+  return map;
+};
+
 export const FilmCard = ({ film, canEdit }: Props) => {
+  const qc = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { data: detail, isPending } = useQuery({
     queryKey: ['films', film.id],
     queryFn: () => getFilm(film.id),
@@ -27,9 +49,21 @@ export const FilmCard = ({ film, canEdit }: Props) => {
     staleTime: 60_000,
   });
 
+  const removal = useMutation({
+    mutationFn: (assignmentId: string) => removeAssignment(film.id, assignmentId),
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ['films', film.id] });
+      qc.invalidateQueries({ queryKey: ['films'] });
+    },
+    onError: (err: unknown) => {
+      setError(`Не удалось удалить участника: ${getFilmErrorMessage(err, 'неизвестная ошибка')}`);
+    },
+  });
+
   // Показываем все роли, а не только занятые: незакрытая роль — это подсказка
   // руководителю, и без неё непонятно, почему номинация недоступна.
-  const byRole = new Map(detail?.assignments.map((a) => [a.role, a.personName]) ?? []);
+  const byRole = groupByRole(detail?.assignments ?? []);
 
   return (
     <Card className="p-4">
@@ -56,38 +90,77 @@ export const FilmCard = ({ film, canEdit }: Props) => {
         </p>
       )}
 
-      <div className="mt-4 flex flex-col gap-2.5 border-t border-[var(--color-hairline)] pt-3.5">
+      <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-hairline)] pt-3.5">
         {isPending ? (
           <p className="text-xs text-[var(--color-subtle-fg)]">Загрузка…</p>
         ) : (
           FILM_ROLES.map((role) => {
-            const person = byRole.get(role);
+            const people = byRole.get(role) ?? [];
             return (
-              <div key={role} className="flex items-center justify-between gap-3">
+              <div key={role} className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-subtle-fg)]">
                   {FILM_ROLE_LABELS[role]}
                 </span>
-                <span
-                  className={
-                    person
-                      ? 'truncate text-[12.5px] font-bold'
-                      : 'truncate text-[12.5px] font-bold text-[var(--color-subtle-fg)]'
-                  }
-                >
-                  {person ?? 'не назначен'}
-                </span>
+                {people.length === 0 ? (
+                  <span className="text-[12.5px] font-bold text-[var(--color-subtle-fg)]">
+                    не назначен
+                  </span>
+                ) : (
+                  <ul className="flex flex-col gap-0.5">
+                    {people.map((a) => (
+                      <li key={a.id} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-[12.5px] font-bold">
+                          {a.personName}
+                        </span>
+                        {canEdit && (
+                          <ConfirmDangerDialog
+                            title="Убрать участника?"
+                            description={`${a.personName} — ${FILM_ROLE_LABELS[role]} в фильме «${film.title}». Назначение будет удалено.`}
+                            confirmLabel="Убрать"
+                            isLoading={removal.isPending}
+                            // mutateAsync отклоняется при ошибке — гасим reject,
+                            // сообщение уже выставит onError мутации.
+                            onConfirm={() => removal.mutateAsync(a.id).catch(() => undefined)}
+                            trigger={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 shrink-0 text-[var(--color-subtle-fg)] hover:text-[var(--color-destructive)]"
+                                aria-label={`Убрать ${a.personName} из съёмочной группы`}
+                                disabled={removal.isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                              </Button>
+                            }
+                          />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             );
           })
         )}
       </div>
 
+      {error && (
+        <NoticeBox tone="danger" className="mt-3">
+          {error}
+        </NoticeBox>
+      )}
+
       {canEdit && (
         <>
           <Button variant="outline" size="xl" className="mt-4" onClick={() => setAddOpen(true)}>
             Изменить съёмочную группу
           </Button>
-          <AddAssignmentDialog filmId={film.id} open={addOpen} onOpenChange={setAddOpen} />
+          <AddAssignmentDialog
+            filmId={film.id}
+            assignments={detail?.assignments ?? []}
+            open={addOpen}
+            onOpenChange={setAddOpen}
+          />
         </>
       )}
     </Card>

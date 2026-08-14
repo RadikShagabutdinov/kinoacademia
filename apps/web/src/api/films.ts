@@ -25,3 +25,6 @@ export const addAssignment = (
   input: CreateFilmAssignmentInput,
 ): Promise<FilmAssignmentDetailDto> =>
   api.post<FilmAssignmentDetailDto>(`/films/${filmId}/assignments`, input);
+
+export const removeAssignment = (filmId: string, assignmentId: string): Promise<void> =>
+  api.delete<void>(`/films/${filmId}/assignments/${assignmentId}`);

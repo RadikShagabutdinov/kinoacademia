@@ -117,6 +117,18 @@ export const findAssignment = async (
   return rows[0] ? toAssignmentRow(rows[0]) : null;
 };
 
+export const findAssignmentById = async (
+  exec: DbExecutor,
+  id: string,
+): Promise<FilmAssignmentRow | null> => {
+  const rows = await exec.select().from(filmAssignments).where(eq(filmAssignments.id, id)).limit(1);
+  return rows[0] ? toAssignmentRow(rows[0]) : null;
+};
+
+export const deleteAssignment = async (exec: DbExecutor, id: string): Promise<void> => {
+  await exec.delete(filmAssignments).where(eq(filmAssignments.id, id));
+};
+
 export const listAssignmentsByFilm = async (
   exec: DbExecutor,
   filmId: string,

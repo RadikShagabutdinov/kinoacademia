@@ -3,7 +3,9 @@ export type FilmErrorCode =
   | 'company_not_found'
   | 'not_cinema'
   | 'person_not_found'
-  | 'duplicate_assignment';
+  | 'duplicate_assignment'
+  | 'assignment_not_found'
+  | 'assignment_nominated';
 
 export class FilmError extends Error {
   constructor(
@@ -20,9 +22,11 @@ export const filmErrorStatus = (code: FilmErrorCode): 404 | 409 => {
     case 'film_not_found':
     case 'company_not_found':
     case 'person_not_found':
+    case 'assignment_not_found':
       return 404;
     case 'not_cinema':
     case 'duplicate_assignment':
+    case 'assignment_nominated':
       return 409;
   }
 };

@@ -429,6 +429,8 @@ stateDiagram-v2
 
 - Фильм может создать только кинокомпания. Для не-кинокомпаний создание фильма отбивается `409 conflict` (`filmCode = "not_cinema"`).
 - В съёмочную группу можно назначить любого персонажа на роль из списка `FILM_ROLES` (`director`, `actor_lead_male`, `actress_lead_female`, `actor_supporting`, `screenwriter`, `cinematographer`, `visual_artist`).
+- Количество персонажей на одной позиции не ограничено, и один персонаж может занимать несколько разных позиций. Единственный запрет — повторное назначение того же персонажа на ту же роль в том же фильме: `409 conflict` (`filmCode = "duplicate_assignment"`).
+- Участника можно убрать из съёмочной группы, пока у него нет номинации на этот фильм: иначе номинация осталась бы без подтверждающего назначения, и удаление отбивается `409 conflict` (`filmCode = "assignment_nominated"`).
 - Номинация привязывается к категории, фильму и персонажу. Соответствие категории и роли участника фильма строгое (`NOMINATION_TO_FILM_ROLE` из `@kinoacademia/shared`):
 
   | Категория | Требуемая роль персонажа |
@@ -465,6 +467,7 @@ stateDiagram-v2
 |---|---|---|---|
 | `POST` | `/api/films` | head/admin | Создать фильм (в своей кинокомпании; admin — в любой) |
 | `POST` | `/api/films/:id/assignments` | head/admin | Добавить участника в съёмочную группу |
+| `DELETE` | `/api/films/:id/assignments/:assignmentId` | head своей / admin | Убрать участника из съёмочной группы |
 | `GET` | `/api/films` | любая | Список фильмов: info/admin — все, head — только своей компании |
 | `GET` | `/api/films/company/:companyId` | head своей / info / admin | Фильмы компании |
 | `GET` | `/api/films/:id` | любая | Карточка фильма с составом |

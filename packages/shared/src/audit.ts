@@ -18,6 +18,7 @@ export const AUDIT_ACTIONS = [
   'job.run_now',
   'film.create',
   'film.assignment.create',
+  'film.assignment.delete',
   'oscar.nominate',
   'oscar.award',
   'scan.upload',
