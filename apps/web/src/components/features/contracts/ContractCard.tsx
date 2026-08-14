@@ -16,7 +16,8 @@ import { SectionLabel } from '@/components/ui/typography';
 import { cn } from '@/lib/utils';
 import {
   BRANCH_LABELS,
-  BREAKUP_PENALTY,
+  BREAKUP_PENALTY_PERCENT_REGULAR,
+  BREAKUP_PENALTY_PERCENT_STAR,
   type ContractDto,
   type ContractStatusCode,
 } from '@kinoacademia/shared';
@@ -135,7 +136,9 @@ export const ContractCard = ({ contract }: Props) => {
 
       {contract.statusCode === 'sent' && contract.kind === 'permanent' && (
         <NoticeBox tone="danger" className="mt-4">
-          Подтверждение разорвёт текущий постоянный контракт со штрафом −{BREAKUP_PENALTY}
+          Подтверждение разорвёт текущий постоянный контракт со штрафом: Звезда теряет{' '}
+          {BREAKUP_PENALTY_PERCENT_STAR}% постоянного рейтинга, обычная персона —{' '}
+          {BREAKUP_PENALTY_PERCENT_REGULAR}%.
         </NoticeBox>
       )}
 
@@ -206,8 +209,9 @@ export const ContractCard = ({ contract }: Props) => {
         title="Односторонний разрыв"
         warning={
           <span>
-            Вы разрываете постоянный контракт в одностороннем порядке. К вашему рейтингу будет
-            применён штраф <strong>−{BREAKUP_PENALTY}</strong>.
+            Вы разрываете постоянный контракт в одностороннем порядке. Штраф уйдёт в пользу
+            компании: Звезда теряет <strong>{BREAKUP_PENALTY_PERCENT_STAR}%</strong> постоянного
+            рейтинга, обычная персона — <strong>{BREAKUP_PENALTY_PERCENT_REGULAR}%</strong>.
           </span>
         }
         confirmLabel="Разорвать"

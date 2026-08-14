@@ -3,7 +3,6 @@ import {
   ACTIVE_CONTRACT_STATUSES,
   AdminPersonDto,
   ApiError,
-  BREAKUP_PENALTY,
   BranchCode,
   CAPITALIZATION_PER_EMPLOYEE_CAP,
   CONTRACT_TRANSITIONS,
@@ -41,6 +40,7 @@ import {
   UserDto,
   WsEventEnvelope,
   canTransition,
+  computeBreakupPenalty,
 } from './index';
 
 const NOW = '2026-04-29T18:00:00.000Z';
@@ -236,9 +236,13 @@ describe('contract state machine', () => {
     expect(ContractErrorCode.safeParse('boom').success).toBe(false);
   });
 
-  it('exports BREAKUP_PENALTY constant', () => {
-    expect(typeof BREAKUP_PENALTY).toBe('number');
-    expect(BREAKUP_PENALTY).toBeGreaterThan(0);
+  it('computeBreakupPenalty takes 50% from a star and 25% from a regular person', () => {
+    expect(computeBreakupPenalty(200, false)).toBe(50);
+    expect(computeBreakupPenalty(200, true)).toBe(100);
+    // Округление до целого рейтинга.
+    expect(computeBreakupPenalty(101, false)).toBe(25);
+    expect(computeBreakupPenalty(0, true)).toBe(0);
+    expect(computeBreakupPenalty(-40, true)).toBe(0);
   });
 
   it('exports CAPITALIZATION_PER_EMPLOYEE_CAP constant', () => {

@@ -6,7 +6,7 @@ import type {
   RatingTransactionDto,
   RatingTxKind,
 } from '@kinoacademia/shared';
-import { STAR_BONUS_MULTIPLIER, computeIsStar } from '@kinoacademia/shared';
+import { STAR_BONUS_MULTIPLIER, computeBreakupPenalty, computeIsStar } from '@kinoacademia/shared';
 import { db } from '../../db/client';
 import { setPenaltyHook } from '../contracts/contracts.service';
 import { RatingError } from './errors';
@@ -352,7 +352,6 @@ export type { DbExecutor } from './ratings-repo';
 export type ContractBreakPenaltyInput = {
   personId: string;
   companyId: string;
-  amount: number;
   reason: string;
   exec?: DbExecutor;
 };
@@ -362,33 +361,48 @@ export type ContractBreakPenaltyInput = {
  * тут не срабатывает: контракт к этому моменту уже разорван (`endedAt` проставлен
  * до вызова штрафа в contracts.service), так что списание персонажа компанию не
  * тянет вниз — она получает только сам штраф.
+ *
+ * Возвращает фактический размер штрафа (0 — если списывать нечего).
  */
 const applyContractBreakPenaltyOn = async (
   exec: DbExecutor,
   input: ContractBreakPenaltyInput,
-): Promise<void> => {
-  await applyPersonDeltaPropagating(exec, input.personId, { penalties: input.amount });
-  await repo.applyCompanyDelta(exec, input.companyId, { penalties: input.amount });
+): Promise<number> => {
+  const row = await repo.ensurePersonRating(exec, input.personId);
+  // База штрафа — постоянный рейтинг без скрытого мастерского модификатора.
+  const permanentWithoutRandomizer = row.nowPermanent - row.randomizer;
+  // Разрывается постоянный контракт, то есть на момент разрыва он ещё действовал:
+  // статус Звезды считаем по порогу «с контрактом», как было до разрыва.
+  const amount = computeBreakupPenalty(
+    permanentWithoutRandomizer,
+    computeIsStar(row.nowPermanent, true),
+  );
+  if (amount <= 0) return 0;
+
+  await applyPersonDeltaPropagating(exec, input.personId, { penalties: amount });
+  await repo.applyCompanyDelta(exec, input.companyId, { penalties: amount });
   await repo.insertTransaction(exec, {
     donorPersonId: input.personId,
     recipientCompanyId: input.companyId,
-    amount: input.amount,
+    amount,
     kind: 'penalty',
     comment: input.reason,
     authorUserId: null,
   });
+  return amount;
 };
 
 export const applyContractBreakPenalty = async (
   input: ContractBreakPenaltyInput,
-): Promise<void> => {
-  if (input.exec) {
-    await applyContractBreakPenaltyOn(input.exec, input);
-  } else {
-    await db.transaction((tx) => applyContractBreakPenaltyOn(tx, input));
+): Promise<number> => {
+  const amount = input.exec
+    ? await applyContractBreakPenaltyOn(input.exec, input)
+    : await db.transaction((tx) => applyContractBreakPenaltyOn(tx, input));
+  if (amount > 0) {
+    emitPerson(input.personId);
+    emitCompany(input.companyId);
   }
-  emitPerson(input.personId);
-  emitCompany(input.companyId);
+  return amount;
 };
 
 export type RandomizerApplyInput = {
@@ -591,7 +605,6 @@ export const wireContractPenalties = (): void => {
     await applyContractBreakPenalty({
       personId: payload.personId,
       companyId: payload.companyId,
-      amount: payload.amount,
       reason: payload.reason,
       exec: exec as DbExecutor,
     });

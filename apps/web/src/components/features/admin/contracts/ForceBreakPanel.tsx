@@ -33,6 +33,8 @@ import {
 } from '@/components/ui/table';
 import { getApiErrorMessage } from '@/lib/apiError';
 import {
+  BREAKUP_PENALTY_PERCENT_REGULAR,
+  BREAKUP_PENALTY_PERCENT_STAR,
   CONTRACT_STATUS_LABELS,
   type ContractDto,
   type ForceBreakSide,
@@ -184,7 +186,9 @@ export const ForceBreakPanel = () => {
               <AlertDialogTitle>Принудительный разрыв контракта</AlertDialogTitle>
               <AlertDialogDescription>
                 Контракт будет завершён без прохождения статусной цепочки. Для постоянного контракта
-                со стороны персонажа может быть начислен штраф.
+                со стороны персонажа может быть начислен штраф: {BREAKUP_PENALTY_PERCENT_STAR}%
+                постоянного рейтинга для Звезды, {BREAKUP_PENALTY_PERCENT_REGULAR}% для обычной
+                персоны.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

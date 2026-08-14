@@ -341,10 +341,9 @@ describe('confirm permanent side-effects', () => {
       statusCode: 'sent',
     });
 
-    const penaltyCalls: Array<{ amount: number; reason: string; personId: string }> = [];
+    const penaltyCalls: Array<{ reason: string; personId: string }> = [];
     service.setPenaltyHook(async (payload) => {
       penaltyCalls.push({
-        amount: payload.amount,
         reason: payload.reason,
         personId: payload.personId,
       });

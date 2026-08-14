@@ -416,30 +416,63 @@ describe('секретность рандомайзера', () => {
 });
 
 describe('contract break penalty', () => {
-  it('subtracts from person and adds to company rating', async () => {
-    const p = seedPerson({ base: 200, nowPermanent: 200 });
-    const c = seedCompany({ employeePermanent: 100, nowPermanent: 100 });
-    await service.applyContractBreakPenalty({
-      personId: p.personId,
-      companyId: c.companyId,
-      amount: 100,
+  const breakPenalty = (personId: string, companyId: string) =>
+    service.applyContractBreakPenalty({
+      personId,
+      companyId,
       reason: 'unilateral_break_by_person',
     });
+
+  it('обычная персона теряет 25% постоянного рейтинга в пользу компании', async () => {
+    const p = seedPerson({ base: 200, nowPermanent: 200 });
+    const c = seedCompany({ employeePermanent: 100, nowPermanent: 100 });
+
+    await expect(breakPenalty(p.personId, c.companyId)).resolves.toBe(50);
+
     const personAfter = personRows.get(p.personId);
     const companyAfter = companyRows.get(c.companyId);
-    expect(personAfter?.penalties).toBe(100);
-    expect(personAfter?.nowPermanent).toBe(100);
-    expect(companyAfter?.penalties).toBe(100);
+    expect(personAfter?.penalties).toBe(50);
+    expect(personAfter?.nowPermanent).toBe(150);
+    expect(companyAfter?.penalties).toBe(50);
     // Контракт к моменту штрафа уже разорван, поэтому падение рейтинга персонажа
     // не тянет капитализацию вниз — компания получает только сам штраф.
     expect(companyAfter?.employeePermanent).toBe(100);
-    expect(companyAfter?.nowPermanent).toBe(200);
+    expect(companyAfter?.nowPermanent).toBe(150);
     expect(companyAfter?.lastPermanent).toBe(100);
     expect(transactions.find((t) => t.kind === 'penalty')).toMatchObject({
       donorPersonId: p.personId,
       recipientCompanyId: c.companyId,
-      amount: 100,
+      amount: 50,
     });
+  });
+
+  it('рандомайзер в базу штрафа не входит', async () => {
+    const p = seedPerson({ base: 200, randomizer: 100, nowPermanent: 300 });
+    const c = seedCompany();
+
+    // 25% считаются от 200, а не от 300.
+    await expect(breakPenalty(p.personId, c.companyId)).resolves.toBe(50);
+    expect(personRows.get(p.personId)?.penalties).toBe(50);
+  });
+
+  it('Звезда теряет 50% постоянного рейтинга', async () => {
+    // Порог Звезды «с контрактом» — 500: разрываемый контракт на момент штрафа
+    // ещё считается действующим.
+    const p = seedPerson({ base: 600, nowPermanent: 600 });
+    const c = seedCompany();
+
+    await expect(breakPenalty(p.personId, c.companyId)).resolves.toBe(300);
+    expect(personRows.get(p.personId)?.penalties).toBe(300);
+    expect(companyRows.get(c.companyId)?.penalties).toBe(300);
+  });
+
+  it('при неположительном постоянном рейтинге штраф не начисляется', async () => {
+    const p = seedPerson({ base: 100, penalties: 100, nowPermanent: 0 });
+    const c = seedCompany();
+
+    await expect(breakPenalty(p.personId, c.companyId)).resolves.toBe(0);
+    expect(personRows.get(p.personId)?.penalties).toBe(100);
+    expect(transactions.some((t) => t.kind === 'penalty')).toBe(false);
   });
 });
 

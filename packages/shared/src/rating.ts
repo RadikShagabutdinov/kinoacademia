@@ -1,10 +1,6 @@
 import { z } from '@hono/zod-openapi';
 import { IsoDateTime, Uuid } from './common';
 
-// TODO: Согласовать итоговый размер штрафа за односторонний разрыв постоянного
-// контракта персонажем (см. документацию по контрактам).
-export const BREAKUP_PENALTY = 100;
-
 /**
  * Потолок вклада одного сотрудника в одно начисление капитализации компании.
  * Ограничение защищает от гиперкапитализации: Звезда с рейтингом 1000 приносит
@@ -29,6 +25,24 @@ export const computeIsStar = (
   if (nowPermanent >= STAR_RATING_FULL) return true;
   if (hasActivePermanentContract && nowPermanent >= STAR_RATING_WITH_CONTRACT) return true;
   return false;
+};
+
+/** Доля постоянного рейтинга, теряемая персонажем при одностороннем разрыве. */
+export const BREAKUP_PENALTY_PERCENT_STAR = 50;
+export const BREAKUP_PENALTY_PERCENT_REGULAR = 25;
+
+/**
+ * Штраф за односторонний разрыв постоянного контракта: процент от постоянного
+ * рейтинга персонажа, посчитанного без скрытого мастерского модификатора
+ * (рандомайзера). Нулевой или отрицательный рейтинг штрафа не даёт.
+ */
+export const computeBreakupPenalty = (
+  permanentWithoutRandomizer: number,
+  isStar: boolean,
+): number => {
+  if (permanentWithoutRandomizer <= 0) return 0;
+  const percent = isStar ? BREAKUP_PENALTY_PERCENT_STAR : BREAKUP_PENALTY_PERCENT_REGULAR;
+  return Math.round((permanentWithoutRandomizer * percent) / 100);
 };
 
 export const RATING_TX_KINDS = [

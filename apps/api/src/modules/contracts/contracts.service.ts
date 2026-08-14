@@ -1,10 +1,9 @@
-import {
-  BREAKUP_PENALTY,
-  type ContractDto,
-  type ContractKind,
-  type ContractSide,
-  type ContractStatusCode,
-  type ContractStatusHistoryDto,
+import type {
+  ContractDto,
+  ContractKind,
+  ContractSide,
+  ContractStatusCode,
+  ContractStatusHistoryDto,
 } from '@kinoacademia/shared';
 import { db } from '../../db/client';
 import * as repo from './contracts-repo';
@@ -19,10 +18,13 @@ const emitUpdated = (events: ContractUpdated[]): void => {
 
 export type PenaltyReason = 'unilateral_break_by_person' | 'auto_break_old_permanent';
 
+/**
+ * Размер штрафа считает модуль рейтингов: он зависит от постоянного рейтинга
+ * персонажа и его статуса Звезды, а этими данными владеет ratings.service.
+ */
 export type PenaltyPayload = {
   personId: string;
   companyId: string;
-  amount: number;
   reason: PenaltyReason;
 };
 
@@ -32,7 +34,7 @@ let penaltyHook: PenaltyHook | null = null;
 
 /**
  * Регистрирует обработчик штрафа за односторонний разрыв permanent-контракта.
- * Реальная логика начисления подключается в задаче 07 (модуль рейтингов).
+ * Реальную логику начисления подключает модуль рейтингов.
  */
 export const setPenaltyHook = (hook: PenaltyHook | null): void => {
   penaltyHook = hook;
@@ -265,7 +267,6 @@ export const confirm = ({ kind, id, actorUserId, comment }: ActionInput): Promis
           {
             personId: oldPermanent.personId,
             companyId: oldPermanent.companyId,
-            amount: BREAKUP_PENALTY,
             reason: 'auto_break_old_permanent',
           },
           tx,
@@ -336,7 +337,6 @@ export const breakByPerson = ({
         {
           personId: contract.personId,
           companyId: contract.companyId,
-          amount: BREAKUP_PENALTY,
           reason: 'unilateral_break_by_person',
         },
         tx,
@@ -410,7 +410,6 @@ export const forceBreakByAdmin = (input: ForceBreakInput): Promise<ContractRow> 
         {
           personId: contract.personId,
           companyId: contract.companyId,
-          amount: BREAKUP_PENALTY,
           reason: 'unilateral_break_by_person',
         },
         tx,
