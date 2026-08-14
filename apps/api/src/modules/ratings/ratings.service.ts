@@ -456,6 +456,29 @@ export const randomizerCancel = async (actorUserId: string): Promise<PersonRatin
       rows.push(row);
       if (companyId) companyIds.add(companyId);
     }
+
+    // Цикл выше откатил только мгновенный перенос (дельта `−randomizer` персонажа
+    // уходит в капитализацию его компании тем же путём, что и начисление). Всё,
+    // что модификатор накапал компаниям плановыми начислениями, лежит отдельной
+    // учётной величиной — изымаем её здесь, иначе это осталось бы в компании
+    // навсегда. Считать её частью цикла нельзя: вычли бы дважды.
+    const withCapitalized = await repo.listCompanyRatingsWithRandomizerCapitalized(tx);
+    for (const company of withCapitalized) {
+      const delta = -company.randomizerCapitalized;
+      await repo.applyCompanyDelta(tx, company.companyId, {
+        employeePermanent: delta,
+        randomizerCapitalized: delta,
+      });
+      await repo.insertTransaction(tx, {
+        recipientCompanyId: company.companyId,
+        amount: delta,
+        kind: 'generated',
+        comment: 'Пересчёт капитализации',
+        authorUserId: actorUserId,
+      });
+      companyIds.add(company.companyId);
+    }
+
     return { rows, companyIds };
   });
 
@@ -467,23 +490,34 @@ export const randomizerCancel = async (actorUserId: string): Promise<PersonRatin
 /**
  * Начисление капитализации компаниям (джоба `capitalize_companies`): начисления
  * накопительные, поэтому в журнал и в `employee_permanent` идёт именно прибавка.
+ * Доля секретного модификатора копится отдельной учётной величиной — её изымает
+ * `randomizerCancel`; в журнал она не выносится.
  */
 export const applyCapitalization = async (
-  entries: Array<{ companyId: string; amount: number }>,
+  entries: Array<{ companyId: string; amount: number; randomizerShare?: number }>,
 ): Promise<number> => {
-  const credited = entries.filter((e) => e.amount !== 0);
+  const credited = entries.filter((e) => e.amount !== 0 || e.randomizerShare);
   if (credited.length === 0) return 0;
 
   await db.transaction(async (tx) => {
     for (const entry of credited) {
-      await repo.applyCompanyDelta(tx, entry.companyId, { employeePermanent: entry.amount });
-      await repo.insertTransaction(tx, {
-        recipientCompanyId: entry.companyId,
-        amount: entry.amount,
-        kind: 'generated',
-        comment: 'Капитализация сотрудников',
-        authorUserId: null,
+      await repo.applyCompanyDelta(tx, entry.companyId, {
+        employeePermanent: entry.amount,
+        ...(entry.randomizerShare !== undefined && {
+          randomizerCapitalized: entry.randomizerShare,
+        }),
       });
+      // Нулевое начисление в журнал не пишем: доля модификатора может быть
+      // ненулевой и при нулевой прибавке (у сотрудника отрицательная база).
+      if (entry.amount !== 0) {
+        await repo.insertTransaction(tx, {
+          recipientCompanyId: entry.companyId,
+          amount: entry.amount,
+          kind: 'generated',
+          comment: 'Капитализация сотрудников',
+          authorUserId: null,
+        });
+      }
     }
   });
 

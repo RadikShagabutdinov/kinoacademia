@@ -102,7 +102,7 @@ export const RandomizerForm = () => {
                 </Button>
               }
               title="Обнулить значения рандомайзера?"
-              description="Все активные значения рандомайзера будут сняты у всех персонажей. Действие необратимо."
+              description="Все активные значения рандомайзера будут сняты у всех персонажей, а из рейтингов компаний уйдёт вся капитализация, накопленная от рандомайзера. Действие необратимо."
               confirmLabel="Обнулить"
               isLoading={cancelMutation.isPending}
               onConfirm={() => cancelMutation.mutateAsync()}

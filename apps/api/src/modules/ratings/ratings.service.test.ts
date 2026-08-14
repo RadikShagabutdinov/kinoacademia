@@ -48,6 +48,7 @@ const seedCompany = (overrides: Partial<CompanyRatingRow> = {}): CompanyRatingRo
     nowPermanent: 0,
     lastPermanent: 0,
     employeePermanent: 0,
+    randomizerCapitalized: 0,
     manualTopup: 0,
     oscar: 0,
     penalties: 0,
@@ -104,6 +105,7 @@ vi.mock('./ratings-repo', () => ({
       ...cur,
       budget: cur.budget + (delta.budget ?? 0),
       employeePermanent: cur.employeePermanent + (delta.employeePermanent ?? 0),
+      randomizerCapitalized: cur.randomizerCapitalized + (delta.randomizerCapitalized ?? 0),
       manualTopup: cur.manualTopup + (delta.manualTopup ?? 0),
       oscar: cur.oscar + (delta.oscar ?? 0),
       penalties: cur.penalties + (delta.penalties ?? 0),
@@ -152,6 +154,10 @@ vi.mock('./ratings-repo', () => ({
   },
   listAllPersonRatings: async () => Array.from(personRows.values()).map((r) => ({ ...r })),
   listAllCompanyRatings: async () => Array.from(companyRows.values()).map((r) => ({ ...r })),
+  listCompanyRatingsWithRandomizerCapitalized: async () =>
+    Array.from(companyRows.values())
+      .filter((r) => r.randomizerCapitalized !== 0)
+      .map((r) => ({ ...r })),
   listPersonHistory: async (
     _e: unknown,
     personId: string,
@@ -536,6 +542,93 @@ describe('applyCapitalization', () => {
     const c = seedCompany();
     const credited = await service.applyCapitalization([{ companyId: c.companyId, amount: 0 }]);
     expect(credited).toBe(0);
+    expect(transactions).toHaveLength(0);
+  });
+
+  it('доля модификатора копится отдельно от капитализации', async () => {
+    const c = seedCompany();
+    await service.applyCapitalization([
+      { companyId: c.companyId, amount: 70, randomizerShare: 20 },
+    ]);
+    const after = companyRows.get(c.companyId);
+    expect(after?.employeePermanent).toBe(70);
+    expect(after?.randomizerCapitalized).toBe(20);
+    // Учётная величина в журнал не выносится: доля модификатора — скрытая информация.
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0]?.amount).toBe(70);
+  });
+});
+
+describe('обнуление рандомайзера снимает его долю в капитализации', () => {
+  it('компания возвращается к значению, которое было бы без модификатора', async () => {
+    const c = seedCompany();
+    const p = seedPerson({ base: 50, nowPermanent: 50 });
+    hireToCompany(p.personId, c.companyId);
+
+    // Модификатор поднимает постоянный рейтинг персонажа: 50 → 70, перенос сразу.
+    await service.randomizerApply({
+      values: [{ personId: p.personId, value: 20 }],
+      actorUserId: ACTOR,
+    });
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(20);
+
+    // Два плановых начисления: по 70 за сотрудника, из них по 20 — от модификатора.
+    await service.applyCapitalization([
+      { companyId: c.companyId, amount: 70, randomizerShare: 20 },
+    ]);
+    await service.applyCapitalization([
+      { companyId: c.companyId, amount: 70, randomizerShare: 20 },
+    ]);
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(160);
+
+    await service.randomizerCancel(ACTOR);
+
+    // Без модификатора было бы: 0 переноса + два начисления по 50 = 100.
+    const after = companyRows.get(c.companyId);
+    expect(after?.employeePermanent).toBe(100);
+    expect(after?.nowPermanent).toBe(100);
+    expect(after?.randomizerCapitalized).toBe(0);
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(50);
+  });
+
+  it('отрицательная доля при отмене возвращается компании', async () => {
+    const c = seedCompany();
+    const p = seedPerson({ base: 90, nowPermanent: 90 });
+    hireToCompany(p.personId, c.companyId);
+
+    await service.randomizerApply({
+      values: [{ personId: p.personId, value: -30 }],
+      actorUserId: ACTOR,
+    });
+    await service.applyCapitalization([
+      { companyId: c.companyId, amount: 60, randomizerShare: -30 },
+    ]);
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(30);
+
+    await service.randomizerCancel(ACTOR);
+
+    // Без модификатора: 0 переноса + начисление 90.
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(90);
+  });
+
+  it('повторная отмена компанию больше не трогает', async () => {
+    const c = seedCompany();
+    const p = seedPerson({ base: 50, nowPermanent: 50 });
+    hireToCompany(p.personId, c.companyId);
+    await service.randomizerApply({
+      values: [{ personId: p.personId, value: 20 }],
+      actorUserId: ACTOR,
+    });
+    await service.applyCapitalization([
+      { companyId: c.companyId, amount: 70, randomizerShare: 20 },
+    ]);
+    await service.randomizerCancel(ACTOR);
+
+    const afterFirst = { ...(companyRows.get(c.companyId) as object) };
+    transactions.length = 0;
+    await service.randomizerCancel(ACTOR);
+
+    expect(companyRows.get(c.companyId)).toMatchObject(afterFirst);
     expect(transactions).toHaveLength(0);
   });
 });

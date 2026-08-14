@@ -1,5 +1,5 @@
 import type { RatingTxKind } from '@kinoacademia/shared';
-import { and, desc, eq, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import type { Database } from '../../db/client';
 import { companyRatings, personRatings, ratingTransactions } from '../../db/schema';
 
@@ -25,6 +25,7 @@ export type CompanyRatingRow = {
   nowPermanent: number;
   lastPermanent: number;
   employeePermanent: number;
+  randomizerCapitalized: number;
   manualTopup: number;
   oscar: number;
   penalties: number;
@@ -65,6 +66,7 @@ const toCompanyRow = (r: typeof companyRatings.$inferSelect): CompanyRatingRow =
   nowPermanent: r.nowPermanent,
   lastPermanent: r.lastPermanent,
   employeePermanent: r.employeePermanent,
+  randomizerCapitalized: r.randomizerCapitalized,
   manualTopup: r.manualTopup,
   oscar: r.oscar,
   penalties: r.penalties,
@@ -254,7 +256,10 @@ export const applyPersonDelta = async (
 };
 
 export type CompanyRatingPatch = Partial<
-  Pick<CompanyRatingRow, 'budget' | 'employeePermanent' | 'manualTopup' | 'oscar' | 'penalties'>
+  Pick<
+    CompanyRatingRow,
+    'budget' | 'employeePermanent' | 'randomizerCapitalized' | 'manualTopup' | 'oscar' | 'penalties'
+  >
 >;
 
 export const updateCompanyRatingAbsolute = async (
@@ -266,11 +271,13 @@ export const updateCompanyRatingAbsolute = async (
   const next = {
     budget: patch.budget ?? current.budget,
     employeePermanent: patch.employeePermanent ?? current.employeePermanent,
+    randomizerCapitalized: patch.randomizerCapitalized ?? current.randomizerCapitalized,
     manualTopup: patch.manualTopup ?? current.manualTopup,
     oscar: patch.oscar ?? current.oscar,
     penalties: patch.penalties ?? current.penalties,
   };
-  // Бюджет не входит в постоянный рейтинг, поэтому его правка не сдвигает now/last.
+  // Бюджет не входит в постоянный рейтинг, а `randomizerCapitalized` — учётная доля уже
+  // начисленной капитализации, поэтому их правка сама по себе не сдвигает now/last.
   const touchedPermanent =
     patch.employeePermanent !== undefined ||
     patch.manualTopup !== undefined ||
@@ -302,6 +309,8 @@ export const applyCompanyDelta = async (
   if (delta.budget !== undefined) patch.budget = current.budget + delta.budget;
   if (delta.employeePermanent !== undefined)
     patch.employeePermanent = current.employeePermanent + delta.employeePermanent;
+  if (delta.randomizerCapitalized !== undefined)
+    patch.randomizerCapitalized = current.randomizerCapitalized + delta.randomizerCapitalized;
   if (delta.manualTopup !== undefined) patch.manualTopup = current.manualTopup + delta.manualTopup;
   if (delta.oscar !== undefined) patch.oscar = current.oscar + delta.oscar;
   if (delta.penalties !== undefined) patch.penalties = current.penalties + delta.penalties;
@@ -395,6 +404,17 @@ export const listAllPersonRatings = async (exec: DbExecutor): Promise<PersonRati
 
 export const listAllCompanyRatings = async (exec: DbExecutor): Promise<CompanyRatingRow[]> => {
   const rows = await exec.select().from(companyRatings);
+  return rows.map(toCompanyRow);
+};
+
+/** Компании, в капитализации которых сидит доля секретного модификатора. */
+export const listCompanyRatingsWithRandomizerCapitalized = async (
+  exec: DbExecutor,
+): Promise<CompanyRatingRow[]> => {
+  const rows = await exec
+    .select()
+    .from(companyRatings)
+    .where(ne(companyRatings.randomizerCapitalized, 0));
   return rows.map(toCompanyRow);
 };
 

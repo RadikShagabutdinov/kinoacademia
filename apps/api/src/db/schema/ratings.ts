@@ -29,6 +29,9 @@ export const companyRatings = pgTable('company_ratings', {
   nowPermanent: integer().notNull().default(0),
   lastPermanent: integer().notNull().default(0),
   employeePermanent: integer().notNull().default(0),
+  // Учётная величина: какая часть employeePermanent пришла от секретного модификатора
+  // через плановые начисления. Отдельным слагаемым рейтинга не является и наружу не отдаётся.
+  randomizerCapitalized: integer().notNull().default(0),
   manualTopup: integer().notNull().default(0),
   oscar: integer().notNull().default(0),
   penalties: integer().notNull().default(0),
