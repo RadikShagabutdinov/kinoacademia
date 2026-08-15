@@ -85,6 +85,13 @@
       "when": 1788000000000,
       "tag": "0012_randomizer_capitalized",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0013_permanent_mirror_backfill",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@ import { queryClient } from './db/client';
 import { env, isProduction } from './env';
 import { start as startJobsScheduler } from './jobs';
 import { logger } from './logger';
-import { wireContractPenalties } from './modules/ratings/ratings.service';
+import { wireContractRatingHooks } from './modules/ratings/ratings.service';
 import { createOpenAPIApp, securitySchemes } from './openapi/app';
 import { adminAuditRoutes } from './routes/admin/audit';
 import { adminCompaniesRoutes } from './routes/admin/companies';
@@ -29,7 +29,7 @@ import { wireWsBroadcasts } from './ws/broadcasts';
 import { startHeartbeat } from './ws/hub';
 import { setupWs } from './ws/server';
 
-wireContractPenalties();
+wireContractRatingHooks();
 wireWsBroadcasts();
 
 const app = createOpenAPIApp();

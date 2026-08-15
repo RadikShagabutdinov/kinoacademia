@@ -8,7 +8,7 @@ import type {
 } from '@kinoacademia/shared';
 import { STAR_BONUS_MULTIPLIER, computeBreakupPenalty, computeIsStar } from '@kinoacademia/shared';
 import { db } from '../../db/client';
-import { setPenaltyHook } from '../contracts/contracts.service';
+import { setPenaltyHook, setPermanentMirrorHooks } from '../contracts/contracts.service';
 import { RatingError } from './errors';
 import { ratingsEmitter } from './events';
 import * as repo from './ratings-repo';
@@ -405,6 +405,49 @@ export const applyContractBreakPenalty = async (
   return amount;
 };
 
+export type PermanentMirrorInput = {
+  personId: string;
+  companyId: string;
+  exec: DbExecutor;
+};
+
+/**
+ * Зеркало постоянного контракта: рейтинг сотрудника не переходит компании, а
+ * учитывается у обоих сразу — пока контракт действует, он входит в капитализацию
+ * компании целиком (без потолка, который действует только для плановых начислений).
+ * Дальнейшие изменения рейтинга держит в актуальном состоянии
+ * `applyPersonDeltaPropagating`, а при завершении контракта зеркало снимается.
+ *
+ * `randomizerCapitalized` намеренно не трогаем: пока сотрудник в штате, отмена
+ * модификатора убирает его из зеркала обычным переносом дельты, и учёт в счётчике
+ * привёл бы к двойному вычитанию.
+ */
+const applyMirror = async (input: PermanentMirrorInput, sign: 1 | -1): Promise<void> => {
+  const person = await repo.ensurePersonRating(input.exec, input.personId);
+  const amount = sign * person.nowPermanent;
+  if (amount === 0) return;
+
+  await repo.applyCompanyDelta(input.exec, input.companyId, { employeePermanent: amount });
+  await repo.insertTransaction(input.exec, {
+    donorPersonId: input.personId,
+    recipientCompanyId: input.companyId,
+    amount,
+    kind: 'generated',
+    comment:
+      sign === 1
+        ? 'Рейтинг сотрудника при заключении контракта'
+        : 'Рейтинг сотрудника при разрыве контракта',
+    authorUserId: null,
+  });
+  emitCompany(input.companyId);
+};
+
+export const attachPermanentEmployee = (input: PermanentMirrorInput): Promise<void> =>
+  applyMirror(input, 1);
+
+export const detachPermanentEmployee = (input: PermanentMirrorInput): Promise<void> =>
+  applyMirror(input, -1);
+
 export type RandomizerApplyInput = {
   values: Array<{ personId: string; value: number }>;
   actorUserId: string;
@@ -592,15 +635,16 @@ export const listAllPersonRatingsWithStar = async (): Promise<
   }));
 };
 
-let penaltyHookWired = false;
+let contractHooksWired = false;
 
 /**
- * Подключает рейтинговый штраф к contracts.service. Вызывается один раз при
+ * Подключает к contracts.service рейтинговые побочные эффекты контрактов: штраф
+ * за разрыв и зеркало постоянного рейтинга сотрудника. Вызывается один раз при
  * старте API (в `index.ts`).
  */
-export const wireContractPenalties = (): void => {
-  if (penaltyHookWired) return;
-  penaltyHookWired = true;
+export const wireContractRatingHooks = (): void => {
+  if (contractHooksWired) return;
+  contractHooksWired = true;
   setPenaltyHook(async (payload, exec) => {
     await applyContractBreakPenalty({
       personId: payload.personId,
@@ -608,5 +652,9 @@ export const wireContractPenalties = (): void => {
       reason: payload.reason,
       exec: exec as DbExecutor,
     });
+  });
+  setPermanentMirrorHooks({
+    attach: (payload, exec) => attachPermanentEmployee({ ...payload, exec: exec as DbExecutor }),
+    detach: (payload, exec) => detachPermanentEmployee({ ...payload, exec: exec as DbExecutor }),
   });
 };

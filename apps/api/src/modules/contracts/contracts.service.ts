@@ -44,6 +44,42 @@ const callPenalty = async (payload: PenaltyPayload, exec: DbExecutor): Promise<v
   if (penaltyHook) await penaltyHook(payload, exec);
 };
 
+/**
+ * Пока действует постоянный контракт, постоянный рейтинг сотрудника учитывается
+ * и у компании: при подтверждении зеркало создаётся, при завершении — снимается.
+ * Саму арифметику делает модуль рейтингов.
+ */
+export type PermanentMirrorPayload = { personId: string; companyId: string };
+export type PermanentMirrorHook = (
+  payload: PermanentMirrorPayload,
+  exec: DbExecutor,
+) => Promise<void>;
+
+let mirrorHooks: { attach: PermanentMirrorHook; detach: PermanentMirrorHook } | null = null;
+
+export const setPermanentMirrorHooks = (
+  hooks: { attach: PermanentMirrorHook; detach: PermanentMirrorHook } | null,
+): void => {
+  mirrorHooks = hooks;
+};
+
+const attachMirror = async (contract: ContractRow, exec: DbExecutor): Promise<void> => {
+  if (contract.kind !== 'permanent' || !mirrorHooks) return;
+  await mirrorHooks.attach({ personId: contract.personId, companyId: contract.companyId }, exec);
+};
+
+/**
+ * Зеркало существует только у подтверждённого и ещё не завершённого постоянного
+ * контракта: `startedAt` проставляется единственный раз — при подтверждении.
+ * Вызывается до начисления штрафа, чтобы обе величины считались от одного и того
+ * же, доштрафного рейтинга сотрудника.
+ */
+const detachMirrorIfPresent = async (contract: ContractRow, exec: DbExecutor): Promise<void> => {
+  if (contract.kind !== 'permanent' || !contract.startedAt || contract.endedAt) return;
+  if (!mirrorHooks) return;
+  await mirrorHooks.detach({ personId: contract.personId, companyId: contract.companyId }, exec);
+};
+
 const loadContract = async (
   exec: DbExecutor,
   kind: ContractKind,
@@ -188,6 +224,7 @@ export const reject = ({ kind, id, actorUserId, comment }: ActionInput) =>
 export const breakByCompany = ({ kind, id, actorUserId, comment }: ActionInput) =>
   runWithEvents(async (tx, events) => {
     const contract = await loadContract(tx, kind, id);
+    await detachMirrorIfPresent(contract, tx);
     return transitionInternal(
       tx,
       contract,
@@ -228,6 +265,7 @@ export const confirmEnd = ({ kind, id, actorUserId, comment, side }: ActionInput
   runWithEvents(async (tx, events) => {
     const contract = await loadContract(tx, kind, id);
     assertRespondingSide(contract, side);
+    await detachMirrorIfPresent(contract, tx);
     return transitionInternal(
       tx,
       contract,
@@ -254,6 +292,7 @@ export const confirm = ({ kind, id, actorUserId, comment }: ActionInput): Promis
     if (kind === 'permanent') {
       const oldPermanent = await repo.findEffectivePermanentByPerson(tx, contract.personId);
       if (oldPermanent && oldPermanent.id !== contract.id) {
+        await detachMirrorIfPresent(oldPermanent, tx);
         await transitionInternal(
           tx,
           oldPermanent,
@@ -303,7 +342,7 @@ export const confirm = ({ kind, id, actorUserId, comment }: ActionInput): Promis
       }
     }
 
-    return transitionInternal(
+    const confirmed = await transitionInternal(
       tx,
       contract,
       'confirmed',
@@ -312,6 +351,8 @@ export const confirm = ({ kind, id, actorUserId, comment }: ActionInput): Promis
       { startedAt: now },
       events,
     );
+    await attachMirror(confirmed, tx);
+    return confirmed;
   });
 
 export const breakByPerson = ({
@@ -323,6 +364,7 @@ export const breakByPerson = ({
   runWithEvents(async (tx, events) => {
     const contract = await loadContract(tx, kind, id);
     const now = new Date();
+    await detachMirrorIfPresent(contract, tx);
     const updated = await transitionInternal(
       tx,
       contract,
@@ -379,6 +421,7 @@ export const forceBreakByAdmin = (input: ForceBreakInput): Promise<ContractRow> 
     const toStatus: ContractStatusCode =
       input.side === 'company' ? 'broken_company' : 'broken_person';
     const now = new Date();
+    await detachMirrorIfPresent(contract, tx);
     const updated = await repo.updateContractStatus(tx, contract.kind, contract.id, {
       statusCode: toStatus,
       endedAt: now,

@@ -592,6 +592,103 @@ describe('applyCapitalization', () => {
   });
 });
 
+describe('зеркало постоянного контракта', () => {
+  const EXEC = {} as never;
+
+  it('при заключении компания получает весь постоянный рейтинг сотрудника', async () => {
+    const c = seedCompany();
+    const p = seedPerson({ base: 280, randomizer: 20, nowPermanent: 300 });
+
+    await service.attachPermanentEmployee({
+      personId: p.personId,
+      companyId: c.companyId,
+      exec: EXEC,
+    });
+
+    const after = companyRows.get(c.companyId);
+    expect(after?.employeePermanent).toBe(300);
+    expect(after?.nowPermanent).toBe(300);
+    // Модификатор входит в зеркало, но в счётчик доли не попадает: пока сотрудник
+    // в штате, его отмену отыграет обычный перенос дельты.
+    expect(after?.randomizerCapitalized).toBe(0);
+    expect(transactions[0]).toMatchObject({
+      recipientCompanyId: c.companyId,
+      amount: 300,
+      kind: 'generated',
+    });
+  });
+
+  it('нулевой рейтинг сотрудника ничего не пишет', async () => {
+    const c = seedCompany();
+    const p = seedPerson();
+    await service.attachPermanentEmployee({
+      personId: p.personId,
+      companyId: c.companyId,
+      exec: EXEC,
+    });
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(0);
+    expect(transactions).toHaveLength(0);
+  });
+
+  it('при разрыве уходит текущий рейтинг сотрудника, наработанное остаётся', async () => {
+    const c = seedCompany();
+    const p = seedPerson({ base: 300, nowPermanent: 300 });
+    hireToCompany(p.personId, c.companyId);
+
+    await service.attachPermanentEmployee({
+      personId: p.personId,
+      companyId: c.companyId,
+      exec: EXEC,
+    });
+    // Плановое начисление за время работы — оно компании и останется.
+    await service.applyCapitalization([{ companyId: c.companyId, amount: 100 }]);
+    // Рост рейтинга сотрудника переносится дельтой и держит зеркало актуальным.
+    await service.manualPersonTransaction({
+      personId: p.personId,
+      amount: 50,
+      actorUserId: ACTOR,
+    });
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(450);
+
+    await service.detachPermanentEmployee({
+      personId: p.personId,
+      companyId: c.companyId,
+      exec: EXEC,
+    });
+
+    const after = companyRows.get(c.companyId);
+    expect(after?.employeePermanent).toBe(100);
+    expect(after?.nowPermanent).toBe(100);
+    expect(after?.lastPermanent).toBe(450);
+    // У самого персонажа рейтинг остаётся при нём.
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(350);
+  });
+
+  it('отмена рандомайзера после зеркала не вычитает дважды', async () => {
+    const c = seedCompany();
+    const p = seedPerson({ base: 100, nowPermanent: 100 });
+
+    // Модификатор проставлен до найма: пока контракта нет, переносить некуда.
+    await service.randomizerApply({
+      values: [{ personId: p.personId, value: 30 }],
+      actorUserId: ACTOR,
+    });
+    hireToCompany(p.personId, c.companyId);
+    await service.attachPermanentEmployee({
+      personId: p.personId,
+      companyId: c.companyId,
+      exec: EXEC,
+    });
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(130);
+
+    await service.randomizerCancel(ACTOR);
+
+    // Из зеркала ушло ровно 30 — один раз, переносом дельты.
+    expect(companyRows.get(c.companyId)?.employeePermanent).toBe(100);
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(100);
+  });
+});
+
 describe('обнуление рандомайзера снимает его долю в капитализации', () => {
   it('компания возвращается к значению, которое было бы без модификатора', async () => {
     const c = seedCompany();

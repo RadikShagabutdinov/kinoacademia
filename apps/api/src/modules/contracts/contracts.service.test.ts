@@ -193,7 +193,25 @@ beforeEach(() => {
   contracts.clear();
   history.length = 0;
   service.setPenaltyHook(null);
+  service.setPermanentMirrorHooks(null);
 });
+
+/** Пишет порядок вызовов зеркала и штрафа: он важен для арифметики рейтинга. */
+const trackRatingHooks = (): string[] => {
+  const calls: string[] = [];
+  service.setPermanentMirrorHooks({
+    attach: async (p) => {
+      calls.push(`attach:${p.personId}`);
+    },
+    detach: async (p) => {
+      calls.push(`detach:${p.personId}`);
+    },
+  });
+  service.setPenaltyHook(async (p) => {
+    calls.push(`penalty:${p.personId}`);
+  });
+  return calls;
+};
 
 describe('createDraft', () => {
   it('creates draft and writes initial history record', async () => {
@@ -408,6 +426,93 @@ describe('confirm permanent side-effects', () => {
     // Разрыв по обоюдному согласию, а не односторонний со стороны компании.
     expect(tempUpdated?.statusCode).toBe('breakup_confirmed');
     expect(tempUpdated?.endedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('зеркало постоянного рейтинга', () => {
+  it('подтверждение постоянного контракта создаёт зеркало', async () => {
+    const c = seedContract({ kind: 'permanent', statusCode: 'sent' });
+    const calls = trackRatingHooks();
+
+    await service.confirm({ kind: 'permanent', id: c.id, actorUserId: ACTOR });
+
+    expect(calls).toEqual([`attach:${c.personId}`]);
+  });
+
+  it('временный контракт зеркало не создаёт', async () => {
+    const c = seedContract({ kind: 'temporary', statusCode: 'sent' });
+    const calls = trackRatingHooks();
+
+    await service.confirm({ kind: 'temporary', id: c.id, actorUserId: ACTOR });
+
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    [
+      'breakByPerson',
+      'confirmed' as ContractStatusCode,
+      (id: string) => service.breakByPerson({ kind: 'permanent', id, actorUserId: ACTOR }),
+    ],
+    [
+      'breakByCompany',
+      'confirmed' as ContractStatusCode,
+      (id: string) => service.breakByCompany({ kind: 'permanent', id, actorUserId: ACTOR }),
+    ],
+    [
+      'confirmEnd',
+      'breakup_sent' as ContractStatusCode,
+      (id: string) => service.confirmEnd({ kind: 'permanent', id, actorUserId: ACTOR }),
+    ],
+    [
+      'forceBreakByAdmin',
+      'confirmed' as ContractStatusCode,
+      (id: string) =>
+        service.forceBreakByAdmin({ kind: 'permanent', id, side: 'person', actorUserId: ACTOR }),
+    ],
+  ])('%s снимает зеркало', async (_name, statusCode, act) => {
+    const c = seedContract({
+      kind: 'permanent',
+      statusCode,
+      startedAt: new Date(),
+    });
+    const calls = trackRatingHooks();
+
+    await act(c.id);
+
+    // Зеркало снимается до штрафа: обе величины считаются от доштрафного рейтинга.
+    expect(calls[0]).toBe(`detach:${c.personId}`);
+  });
+
+  it('неподтверждённый контракт зеркало не снимает', async () => {
+    const c = seedContract({ kind: 'permanent', statusCode: 'sent' });
+    const calls = trackRatingHooks();
+
+    await service.forceBreakByAdmin({
+      kind: 'permanent',
+      id: c.id,
+      side: 'company',
+      actorUserId: ACTOR,
+    });
+
+    expect(calls).toEqual([]);
+  });
+
+  it('авто-разрыв старого постоянного снимает его зеркало до штрафа и до нового зеркала', async () => {
+    const personId = randomUUID();
+    const oldPermanent = seedContract({
+      kind: 'permanent',
+      personId,
+      statusCode: 'confirmed',
+      startedAt: new Date(),
+    });
+    const newPermanent = seedContract({ kind: 'permanent', personId, statusCode: 'sent' });
+    const calls = trackRatingHooks();
+
+    await service.confirm({ kind: 'permanent', id: newPermanent.id, actorUserId: ACTOR });
+
+    expect(calls).toEqual([`detach:${personId}`, `penalty:${personId}`, `attach:${personId}`]);
+    expect(contracts.get(oldPermanent.id)?.statusCode).toBe('broken_person');
   });
 });
 
