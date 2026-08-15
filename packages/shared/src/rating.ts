@@ -320,6 +320,28 @@ export const ManualRatingInput = z
   });
 export type ManualRatingInput = z.infer<typeof ManualRatingInput>;
 
+/**
+ * Выплата руководителя из бюджета компании в постоянный рейтинг получателя —
+ * зарплата сотрудникам и прочие расходы. Получатель — один: персонаж или компания.
+ */
+export const CompanyPaymentInput = z
+  .object({
+    recipientPersonId: Uuid.optional(),
+    recipientCompanyId: Uuid.optional(),
+    amount: z.number().int().positive(),
+    comment: z.string().max(500).optional(),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (Boolean(v.recipientPersonId) === Boolean(v.recipientCompanyId)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Specify exactly one of recipientPersonId / recipientCompanyId',
+      });
+    }
+  });
+export type CompanyPaymentInput = z.infer<typeof CompanyPaymentInput>;
+
 export const RandomizerEntry = z.object({
   personId: Uuid,
   value: z.number().int(),

@@ -1,44 +1,18 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { type ApiError, PersonRatingAdminDto, RandomizerApplyInput } from '@kinoacademia/shared';
-import type { Context } from 'hono';
+import { PersonRatingAdminDto, RandomizerApplyInput } from '@kinoacademia/shared';
 import type { AuthVariables } from '../../auth/middleware';
 import { requireAuth, requireRole } from '../../auth/middleware';
 import { writeAudit } from '../../modules/audit/audit-repo';
-import { RatingError, ratingErrorStatus } from '../../modules/ratings/errors';
 import * as ratings from '../../modules/ratings/ratings.service';
 import { createOpenAPIApp } from '../../openapi/app';
 import { errorResponses } from '../../openapi/responses';
+import { handleRatingError } from '../rating-error';
 
 type AdminEnv = { Variables: AuthVariables };
 
 export const adminRandomizerRoutes = createOpenAPIApp<AdminEnv>();
 
 adminRandomizerRoutes.use('*', requireAuth, requireRole('admin'));
-
-const handleRatingError = (c: Context, err: unknown) => {
-  if (err instanceof RatingError) {
-    const status = ratingErrorStatus(err.code);
-    const apiCode: ApiError['code'] =
-      status === 404 ? 'not_found' : status === 409 ? 'conflict' : 'validation_error';
-    const body = {
-      code: apiCode,
-      message: err.message,
-      details: { ratingCode: err.code },
-    } satisfies ApiError;
-    // Разветвление по литералам: c.json(body, <union>) склеивает статусы.
-    switch (status) {
-      case 400:
-        return c.json(body, 400);
-      case 404:
-        return c.json(body, 404);
-      case 409:
-        return c.json(body, 409);
-      case 501:
-        return c.json(body, 501);
-    }
-  }
-  throw err;
-};
 
 const applyRandomizerRoute = createRoute({
   method: 'post',

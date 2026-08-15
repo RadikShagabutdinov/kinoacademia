@@ -3,7 +3,7 @@ import { DisplayNumber, MonoValue, SectionLabel } from '@/components/ui/typograp
 import { formatAmount } from '@/lib/tone';
 import type { PersonRatingDto } from '@kinoacademia/shared';
 import { Link } from '@tanstack/react-router';
-import { Sparkles } from 'lucide-react';
+import { Scale, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 type Props = {
@@ -65,12 +65,20 @@ export const VariableRatingCard = ({ rating }: Props) => {
         />
       </div>
 
-      <Button asChild size="xl" className="mt-4">
-        <Link to="/admire">
-          <Sparkles className="h-4 w-4" />
-          Выразить восхищение
-        </Link>
-      </Button>
+      <div className="mt-4 flex flex-col gap-2">
+        <Button asChild size="xl">
+          <Link to="/admire">
+            <Sparkles className="h-4 w-4" />
+            Выразить восхищение
+          </Link>
+        </Button>
+        <Button asChild size="xl" variant="outline">
+          <Link to="/compare">
+            <Scale className="h-4 w-4" />
+            Встречная проверка
+          </Link>
+        </Button>
+      </div>
     </section>
   );
 };

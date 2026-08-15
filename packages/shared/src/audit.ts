@@ -11,6 +11,7 @@ export const AUDIT_ACTIONS = [
   'person.close',
   'company.create',
   'company.update',
+  'company.payment',
   'transaction.manual',
   'randomizer.apply',
   'randomizer.cancel',

@@ -1,6 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  type ApiError,
   BranchCode,
   CompanyRatingDto,
   PersonRatingDto,
@@ -21,44 +20,12 @@ import {
   findPersonById,
   listPersons,
 } from '../modules/persons/persons-repo';
-import { RatingError, ratingErrorStatus } from '../modules/ratings/errors';
 import * as ratings from '../modules/ratings/ratings.service';
 import { createOpenAPIApp } from '../openapi/app';
 import { apiError, errorResponses } from '../openapi/responses';
+import { handleRatingError } from './rating-error';
 
 type Env = { Variables: AuthVariables };
-
-const handleRatingError = (c: Context, err: unknown) => {
-  if (err instanceof RatingError) {
-    const status = ratingErrorStatus(err.code);
-    const apiCode: ApiError['code'] =
-      status === 404
-        ? 'not_found'
-        : status === 409
-          ? 'conflict'
-          : status === 501
-            ? 'internal_error'
-            : 'validation_error';
-    const body = {
-      code: apiCode,
-      message: err.message,
-      details: { ratingCode: err.code },
-    } satisfies ApiError;
-    // Разветвление по литералам обязательно: c.json(body, <union>) склеивает
-    // статусы в одно поле _status, и ответ перестаёт подходить под роут.
-    switch (status) {
-      case 400:
-        return c.json(body, 400);
-      case 404:
-        return c.json(body, 404);
-      case 409:
-        return c.json(body, 409);
-      case 501:
-        return c.json(body, 501);
-    }
-  }
-  throw err;
-};
 
 const requireOwnPerson = async (c: Context) => {
   const user = c.get('user') as AuthVariables['user'];
@@ -181,7 +148,7 @@ const admireRoute = createRoute({
   tags: ['ratings'],
   summary: 'Express admiration (transfer rating)',
   description:
-    "Transfer rating points from current person to another person (admiration mechanic). Deducts from donor's nowPermanent, adds to recipient's manualTopup. Cannot transfer to self.",
+    "Transfer rating points from current person to another person (admiration mechanic). Deducts from donor's variable rating (generated) and adds the amount — multiplied by 5 when the donor is a Star — to the recipient's permanent rating (systemTopup). Cannot transfer to self.",
   security: [{ cookieAuth: [] }],
   request: {
     body: {

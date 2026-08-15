@@ -72,7 +72,59 @@ function HeadPersonSummary({
 }: { person: NonNullable<ReturnType<typeof useMe>['data']>['person'] }) {
   const { data: rating } = useQuery({ ...myRatingQueryOptions, enabled: Boolean(person) });
   if (!person || !rating) return null;
-  return <PersonHeroCard person={person} rating={rating} />;
+  return (
+    <>
+      <PersonHeroCard person={person} rating={rating} />
+      <PersonActions isStar={rating.isStar} />
+    </>
+  );
+}
+
+/**
+ * Личные действия персонажа: восхищение и встречная проверка доступны каждому
+ * участнику игры, поэтому блок одинаков и у сотрудника, и у руководителя.
+ */
+function PersonActions({ isStar, awaiting = 0 }: { isStar: boolean; awaiting?: number }) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <ActionTile
+          to="/admire"
+          icon={Sparkles}
+          title="Выразить восхищение"
+          accentIcon
+          {...(isStar ? { hint: '×5 как Звезде' } : {})}
+        />
+        <ActionTile
+          to="/my-contracts"
+          icon={ClipboardList}
+          title="Мои контракты"
+          {...(awaiting > 0
+            ? {
+                hint: `${awaiting} ${awaiting === 1 ? 'предложение' : 'предложения'}`,
+                tone: 'alert' as const,
+              }
+            : {})}
+        />
+      </div>
+
+      <Link
+        to="/compare"
+        className="block rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-card)] p-4 transition-colors hover:border-[var(--color-accent)]"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 text-xs font-bold">
+            <Scale className="h-4 w-4 text-[var(--color-accent)]" />
+            Встречная проверка
+          </span>
+          <span className="text-[11px] font-semibold text-[var(--color-accent)]">Сравнить →</span>
+        </div>
+        <p className="mt-1.5 max-w-[280px] text-[11px] leading-relaxed text-[var(--color-subtle-fg)]">
+          Сверьте свой рейтинг с рейтингом любого персонажа — один на один.
+        </p>
+      </Link>
+    </>
+  );
 }
 
 type PersonHomeProps = {
@@ -121,42 +173,7 @@ function PersonHome({ meId, person, login }: PersonHomeProps) {
     <div className="space-y-4">
       {rating && <PersonHeroCard person={person} rating={rating} />}
 
-      <div className="grid grid-cols-2 gap-3">
-        <ActionTile
-          to="/admire"
-          icon={Sparkles}
-          title="Выразить восхищение"
-          accentIcon
-          {...(rating?.isStar ? { hint: '×5 как Звезде' } : {})}
-        />
-        <ActionTile
-          to="/my-contracts"
-          icon={ClipboardList}
-          title="Мои контракты"
-          {...(awaiting > 0
-            ? {
-                hint: `${awaiting} ${awaiting === 1 ? 'предложение' : 'предложения'}`,
-                tone: 'alert' as const,
-              }
-            : {})}
-        />
-      </div>
-
-      <Link
-        to="/compare"
-        className="block rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-card)] p-4 transition-colors hover:border-[var(--color-accent)]"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <span className="flex items-center gap-2 text-xs font-bold">
-            <Scale className="h-4 w-4 text-[var(--color-accent)]" />
-            Встречная проверка
-          </span>
-          <span className="text-[11px] font-semibold text-[var(--color-accent)]">Сравнить →</span>
-        </div>
-        <p className="mt-1.5 max-w-[280px] text-[11px] leading-relaxed text-[var(--color-subtle-fg)]">
-          Сверьте свой рейтинг с рейтингом любого персонажа — один на один.
-        </p>
-      </Link>
+      <PersonActions isStar={rating?.isStar ?? false} awaiting={awaiting} />
 
       {meId && <RecentEvents transactions={history} meId={meId} />}
     </div>

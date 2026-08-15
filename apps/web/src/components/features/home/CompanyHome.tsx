@@ -14,7 +14,7 @@ import {
 } from '@kinoacademia/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Award, Clapperboard, FilePlus2 } from 'lucide-react';
+import { Award, Clapperboard, FilePlus2, Wallet } from 'lucide-react';
 
 type Props = { company: CompanyDto };
 
@@ -90,6 +90,7 @@ export const CompanyHome = ({ company }: Props) => {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <TileLink to="/company/contracts" icon={FilePlus2} label="Предложить контракт" accent />
+        <TileLink to="/company/payments" icon={Wallet} label="Выплата из бюджета" />
         {isCinema && <TileLink to="/company/films" icon={Clapperboard} label="Заявить фильм" />}
         {isCinema && <TileLink to="/company/oscar-nominations" icon={Award} label="Номинировать" />}
       </div>

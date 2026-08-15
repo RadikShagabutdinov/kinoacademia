@@ -35,12 +35,16 @@ export const toCompanyDto = (row: CompanyRow): CompanyDto => ({
 
 export type ListCompaniesFilter = {
   branchCode?: BranchCode;
+  isSystem?: boolean;
 };
 
 export const listCompanies = async (filter: ListCompaniesFilter = {}): Promise<CompanyRow[]> => {
   const conditions = [];
   if (filter.branchCode !== undefined) {
     conditions.push(eq(companies.branchCode, filter.branchCode));
+  }
+  if (filter.isSystem !== undefined) {
+    conditions.push(eq(companies.isSystem, filter.isSystem));
   }
   const rows = await db
     .select()

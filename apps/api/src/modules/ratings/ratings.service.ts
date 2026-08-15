@@ -536,6 +536,37 @@ export const manualTransaction = async (
   return { target: result.target, source: result.source, tx: result.tx };
 };
 
+export type CompanyPaymentServiceInput = {
+  companyId: string;
+  recipient: { type: 'person' | 'company'; id: string };
+  amount: number;
+  comment?: string;
+  actorUserId: string;
+};
+
+/**
+ * Выплата руководителя из бюджета компании в постоянный рейтинг получателя:
+ * зарплата сотрудникам и прочие расходы. Это частный случай ручной транзакции —
+ * фиксированные части рейтинга (бюджет → «ручная» составляющая постоянного) и
+ * запрет платить самому себе: иначе бюджет свободно конвертировался бы в
+ * собственный рейтинг компании.
+ */
+export const payFromCompanyBudget = async (
+  input: CompanyPaymentServiceInput,
+): Promise<ManualTransactionResult> => {
+  if (input.recipient.type === 'company' && input.recipient.id === input.companyId) {
+    throw new RatingError('self_transfer', 'Cannot pay from a company budget to itself');
+  }
+  return manualTransaction({
+    to: { type: input.recipient.type, id: input.recipient.id, slot: 'permanent', kind: 'manual' },
+    from: { type: 'company', id: input.companyId, slot: 'budget' },
+    amount: input.amount,
+    mode: 'absolute',
+    actorUserId: input.actorUserId,
+    ...(input.comment !== undefined && { comment: input.comment }),
+  });
+};
+
 export const applyOscarToPerson = (
   input: Omit<ManualPersonInput, 'kind' | 'mode'>,
 ): Promise<{ row: PersonRatingRow; tx: RatingTransactionRow }> =>

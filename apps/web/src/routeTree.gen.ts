@@ -30,6 +30,7 @@ import { Route as AuthInfoOscarsRouteImport } from './routes/_auth.info.oscars'
 import { Route as AuthInfoFilmsRouteImport } from './routes/_auth.info.films'
 import { Route as AuthInfoContractsHistoryRouteImport } from './routes/_auth.info.contracts-history'
 import { Route as AuthCompanyRatingRouteImport } from './routes/_auth.company.rating'
+import { Route as AuthCompanyPaymentsRouteImport } from './routes/_auth.company.payments'
 import { Route as AuthCompanyOscarNominationsRouteImport } from './routes/_auth.company.oscar-nominations'
 import { Route as AuthCompanyFilmsRouteImport } from './routes/_auth.company.films'
 import { Route as AuthCompanyDocumentsRouteImport } from './routes/_auth.company.documents'
@@ -152,6 +153,11 @@ const AuthCompanyRatingRoute = AuthCompanyRatingRouteImport.update({
   path: '/rating',
   getParentRoute: () => AuthCompanyRoute,
 } as any)
+const AuthCompanyPaymentsRoute = AuthCompanyPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => AuthCompanyRoute,
+} as any)
 const AuthCompanyOscarNominationsRoute =
   AuthCompanyOscarNominationsRouteImport.update({
     id: '/oscar-nominations',
@@ -261,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/company/documents': typeof AuthCompanyDocumentsRoute
   '/company/films': typeof AuthCompanyFilmsRoute
   '/company/oscar-nominations': typeof AuthCompanyOscarNominationsRoute
+  '/company/payments': typeof AuthCompanyPaymentsRoute
   '/company/rating': typeof AuthCompanyRatingRoute
   '/info/contracts-history': typeof AuthInfoContractsHistoryRoute
   '/info/films': typeof AuthInfoFilmsRoute
@@ -298,6 +305,7 @@ export interface FileRoutesByTo {
   '/company/documents': typeof AuthCompanyDocumentsRoute
   '/company/films': typeof AuthCompanyFilmsRoute
   '/company/oscar-nominations': typeof AuthCompanyOscarNominationsRoute
+  '/company/payments': typeof AuthCompanyPaymentsRoute
   '/company/rating': typeof AuthCompanyRatingRoute
   '/info/contracts-history': typeof AuthInfoContractsHistoryRoute
   '/info/films': typeof AuthInfoFilmsRoute
@@ -338,6 +346,7 @@ export interface FileRoutesById {
   '/_auth/company/documents': typeof AuthCompanyDocumentsRoute
   '/_auth/company/films': typeof AuthCompanyFilmsRoute
   '/_auth/company/oscar-nominations': typeof AuthCompanyOscarNominationsRoute
+  '/_auth/company/payments': typeof AuthCompanyPaymentsRoute
   '/_auth/company/rating': typeof AuthCompanyRatingRoute
   '/_auth/info/contracts-history': typeof AuthInfoContractsHistoryRoute
   '/_auth/info/films': typeof AuthInfoFilmsRoute
@@ -378,6 +387,7 @@ export interface FileRouteTypes {
     | '/company/documents'
     | '/company/films'
     | '/company/oscar-nominations'
+    | '/company/payments'
     | '/company/rating'
     | '/info/contracts-history'
     | '/info/films'
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/company/documents'
     | '/company/films'
     | '/company/oscar-nominations'
+    | '/company/payments'
     | '/company/rating'
     | '/info/contracts-history'
     | '/info/films'
@@ -454,6 +465,7 @@ export interface FileRouteTypes {
     | '/_auth/company/documents'
     | '/_auth/company/films'
     | '/_auth/company/oscar-nominations'
+    | '/_auth/company/payments'
     | '/_auth/company/rating'
     | '/_auth/info/contracts-history'
     | '/_auth/info/films'
@@ -622,6 +634,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCompanyRatingRouteImport
       parentRoute: typeof AuthCompanyRoute
     }
+    '/_auth/company/payments': {
+      id: '/_auth/company/payments'
+      path: '/payments'
+      fullPath: '/company/payments'
+      preLoaderRoute: typeof AuthCompanyPaymentsRouteImport
+      parentRoute: typeof AuthCompanyRoute
+    }
     '/_auth/company/oscar-nominations': {
       id: '/_auth/company/oscar-nominations'
       path: '/oscar-nominations'
@@ -776,6 +795,7 @@ interface AuthCompanyRouteChildren {
   AuthCompanyDocumentsRoute: typeof AuthCompanyDocumentsRoute
   AuthCompanyFilmsRoute: typeof AuthCompanyFilmsRoute
   AuthCompanyOscarNominationsRoute: typeof AuthCompanyOscarNominationsRoute
+  AuthCompanyPaymentsRoute: typeof AuthCompanyPaymentsRoute
   AuthCompanyRatingRoute: typeof AuthCompanyRatingRoute
   AuthCompanyIndexRoute: typeof AuthCompanyIndexRoute
 }
@@ -785,6 +805,7 @@ const AuthCompanyRouteChildren: AuthCompanyRouteChildren = {
   AuthCompanyDocumentsRoute: AuthCompanyDocumentsRoute,
   AuthCompanyFilmsRoute: AuthCompanyFilmsRoute,
   AuthCompanyOscarNominationsRoute: AuthCompanyOscarNominationsRoute,
+  AuthCompanyPaymentsRoute: AuthCompanyPaymentsRoute,
   AuthCompanyRatingRoute: AuthCompanyRatingRoute,
   AuthCompanyIndexRoute: AuthCompanyIndexRoute,
 }

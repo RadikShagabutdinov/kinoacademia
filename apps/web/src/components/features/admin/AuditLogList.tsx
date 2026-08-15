@@ -17,6 +17,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'person.close': 'Закрыт персонаж',
   'company.create': 'Создана компания',
   'company.update': 'Изменена компания',
+  'company.payment': 'Выплата из бюджета',
   'transaction.manual': 'Ручная транзакция',
   'randomizer.apply': 'Применён рандомайзер',
   'randomizer.cancel': 'Отменён рандомайзер',

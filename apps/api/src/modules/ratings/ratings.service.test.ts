@@ -981,3 +981,90 @@ describe('manualTransaction', () => {
     expect(personRows.get(p.personId)?.nowPermanent).toBe(30);
   });
 });
+
+describe('payFromCompanyBudget', () => {
+  it('платит персонажу из бюджета в постоянный рейтинг', async () => {
+    const company = seedCompany({ budget: 500 });
+    const p = seedPerson();
+
+    const result = await service.payFromCompanyBudget({
+      companyId: company.companyId,
+      recipient: { type: 'person', id: p.personId },
+      amount: 120,
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(company.companyId)?.budget).toBe(380);
+    expect(personRows.get(p.personId)?.manualTopup).toBe(120);
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(120);
+    expect(result.tx.kind).toBe('manual');
+    expect(result.tx.donorCompanyId).toBe(company.companyId);
+    expect(result.tx.recipientPersonId).toBe(p.personId);
+  });
+
+  it('зарплата своему сотруднику возвращается в капитализацию компании', async () => {
+    const company = seedCompany({ budget: 500 });
+    const p = seedPerson();
+    hireToCompany(p.personId, company.companyId);
+
+    await service.payFromCompanyBudget({
+      companyId: company.companyId,
+      recipient: { type: 'person', id: p.personId },
+      amount: 80,
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(company.companyId)?.budget).toBe(420);
+    expect(companyRows.get(company.companyId)?.employeePermanent).toBe(80);
+    expect(companyRows.get(company.companyId)?.nowPermanent).toBe(80);
+  });
+
+  it('платит другой компании в постоянный рейтинг', async () => {
+    const payer = seedCompany({ budget: 300 });
+    const recipient = seedCompany();
+
+    await service.payFromCompanyBudget({
+      companyId: payer.companyId,
+      recipient: { type: 'company', id: recipient.companyId },
+      amount: 300,
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(payer.companyId)?.budget).toBe(0);
+    expect(companyRows.get(recipient.companyId)?.manualTopup).toBe(300);
+    expect(companyRows.get(recipient.companyId)?.nowPermanent).toBe(300);
+  });
+
+  it('отклоняет выплату сверх бюджета', async () => {
+    const company = seedCompany({ budget: 50 });
+    const p = seedPerson();
+
+    await expect(
+      service.payFromCompanyBudget({
+        companyId: company.companyId,
+        recipient: { type: 'person', id: p.personId },
+        amount: 51,
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'insufficient_rating' });
+
+    expect(companyRows.get(company.companyId)?.budget).toBe(50);
+    expect(transactions).toHaveLength(0);
+  });
+
+  it('отклоняет выплату компании самой себе', async () => {
+    const company = seedCompany({ budget: 500 });
+
+    await expect(
+      service.payFromCompanyBudget({
+        companyId: company.companyId,
+        recipient: { type: 'company', id: company.companyId },
+        amount: 100,
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'self_transfer' });
+
+    expect(companyRows.get(company.companyId)?.budget).toBe(500);
+    expect(transactions).toHaveLength(0);
+  });
+});

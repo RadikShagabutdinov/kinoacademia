@@ -7,6 +7,7 @@ import {
   CAPITALIZATION_PER_EMPLOYEE_CAP,
   CONTRACT_TRANSITIONS,
   CompanyDto,
+  CompanyPaymentInput,
   CompanyRatingDto,
   ContractActionInput,
   ContractDto,
@@ -577,5 +578,36 @@ describe('ManualRatingInput', () => {
         amount: 10,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('CompanyPaymentInput', () => {
+  it('принимает выплату персонажу и компании', () => {
+    expect(CompanyPaymentInput.safeParse({ recipientPersonId: UUID, amount: 50 }).success).toBe(
+      true,
+    );
+    expect(CompanyPaymentInput.safeParse({ recipientCompanyId: UUID, amount: 50 }).success).toBe(
+      true,
+    );
+  });
+
+  it('требует ровно одного получателя', () => {
+    expect(CompanyPaymentInput.safeParse({ amount: 50 }).success).toBe(false);
+    expect(
+      CompanyPaymentInput.safeParse({
+        recipientPersonId: UUID,
+        recipientCompanyId: UUID_2,
+        amount: 50,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('не пускает неположительную сумму', () => {
+    expect(CompanyPaymentInput.safeParse({ recipientPersonId: UUID, amount: 0 }).success).toBe(
+      false,
+    );
+    expect(CompanyPaymentInput.safeParse({ recipientPersonId: UUID, amount: -5 }).success).toBe(
+      false,
+    );
   });
 });
