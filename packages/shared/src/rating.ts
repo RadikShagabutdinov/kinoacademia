@@ -142,35 +142,181 @@ export const ManualRatingMode = z.enum(['absolute', 'percent']);
 export type ManualRatingMode = z.infer<typeof ManualRatingMode>;
 
 /**
- * `base` — стартовый («базовый») рейтинг персонажа, `budget` — бюджет компании.
- * Оба вносятся только администратором и всегда абсолютной величиной.
+ * Абсолютная величина процентного перевода. Процентом платит только компания со
+ * своего постоянного счёта, поэтому база — её `nowPermanent`. Формула общая для
+ * формы (предпросмотр суммы) и сервера, чтобы предпросмотр совпадал с транзакцией.
  */
-export const ManualRatingKind = z.enum(['manual', 'oscar', 'penalty', 'base', 'budget']);
+export const computePercentAmount = (percent: number, base: number): number =>
+  Math.round((base * percent) / 100);
+
+/**
+ * Часть рейтинга, участвующая в ручной транзакции: у персонажа это постоянный
+ * или переменный рейтинг, у компании — постоянный рейтинг или бюджет.
+ */
+export const RATING_SLOTS = ['permanent', 'variable', 'budget'] as const;
+export const RatingSlot = z.enum(RATING_SLOTS);
+export type RatingSlot = z.infer<typeof RatingSlot>;
+
+export const PERSON_RATING_SLOTS: readonly RatingSlot[] = ['permanent', 'variable'];
+export const COMPANY_RATING_SLOTS: readonly RatingSlot[] = ['permanent', 'budget'];
+
+const SLOTS_BY_SIDE: Record<'person' | 'company', readonly RatingSlot[]> = {
+  person: PERSON_RATING_SLOTS,
+  company: COMPANY_RATING_SLOTS,
+};
+
+export const isRatingSlotAllowed = (side: 'person' | 'company', slot: RatingSlot): boolean =>
+  SLOTS_BY_SIDE[side].includes(slot);
+
+/**
+ * Составляющая постоянного рейтинга, в которую попадает начисление.
+ * `base` — стартовый («базовый») рейтинг персонажа, вносится только абсолютной величиной.
+ */
+export const ManualRatingKind = z.enum(['manual', 'oscar', 'penalty', 'base']);
 export type ManualRatingKind = z.infer<typeof ManualRatingKind>;
 
-// Процент считается от nowPermanent персонажа или employeePermanent компании.
+/** Кому начисляем: сущность, часть рейтинга и — для постоянного — его составляющая. */
+export const ManualRatingTarget = z
+  .object({
+    personId: Uuid.optional(),
+    companyId: Uuid.optional(),
+    slot: RatingSlot,
+    kind: ManualRatingKind.default('manual'),
+  })
+  .strict();
+export type ManualRatingTarget = z.infer<typeof ManualRatingTarget>;
+
+/**
+ * Откуда берём. Составляющей у источника нет: постоянный рейтинг всегда списывается
+ * из «ручной» составляющей — иначе пришлось бы «снимать оскар» или «снимать базу».
+ */
+export const ManualRatingSource = z
+  .object({
+    personId: Uuid.optional(),
+    companyId: Uuid.optional(),
+    slot: RatingSlot,
+  })
+  .strict();
+export type ManualRatingSource = z.infer<typeof ManualRatingSource>;
+
+const sideKind = (side: {
+  personId?: string | undefined;
+  companyId?: string | undefined;
+}): 'person' | 'company' | null => {
+  if (Boolean(side.personId) === Boolean(side.companyId)) return null;
+  return side.personId ? 'person' : 'company';
+};
+
+/**
+ * Ручная транзакция админа. Без `from` рейтинг берётся из неисчерпаемого админского
+ * ресурса, с `from` — списывается у указанного персонажа/компании. Процентом платит
+ * только компания со своего постоянного счёта: база процента — её постоянный рейтинг.
+ */
 export const ManualRatingInput = z
   .object({
-    targetPersonId: Uuid.optional(),
-    targetCompanyId: Uuid.optional(),
+    to: ManualRatingTarget,
+    from: ManualRatingSource.optional(),
     amount: z.number().int(),
     mode: ManualRatingMode.default('absolute'),
-    kind: ManualRatingKind.default('manual'),
     comment: z.string().max(500).optional(),
   })
-  .refine((v) => Boolean(v.targetPersonId) !== Boolean(v.targetCompanyId), {
-    message: 'Specify exactly one of targetPersonId / targetCompanyId',
-  })
-  .refine((v) => v.kind !== 'base' || Boolean(v.targetPersonId), {
-    message: 'Kind "base" applies to a person only',
-  })
-  .refine((v) => v.kind !== 'budget' || Boolean(v.targetCompanyId), {
-    message: 'Kind "budget" applies to a company only',
-  })
-  // Бюджет компании и база персонажа вносятся абсолютной величиной: бюджет вообще
-  // не входит в постоянный рейтинг, а база задаёт его отправную точку.
-  .refine((v) => (v.kind !== 'base' && v.kind !== 'budget') || v.mode === 'absolute', {
-    message: 'Kinds "base" and "budget" support absolute mode only',
+  .strict()
+  .superRefine((v, ctx) => {
+    const toKind = sideKind(v.to);
+    if (!toKind) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['to'],
+        message: 'Specify exactly one of personId / companyId',
+      });
+    } else if (!isRatingSlotAllowed(toKind, v.to.slot)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['to', 'slot'],
+        message: `Slot "${v.to.slot}" is not applicable to a ${toKind}`,
+      });
+    }
+
+    if (v.to.kind === 'base' && (toKind !== 'person' || v.to.slot !== 'permanent')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['to', 'kind'],
+        message: 'Kind "base" applies to a person permanent rating only',
+      });
+    }
+    // База задаёт отправную точку постоянного рейтинга — её вносят числом.
+    if (v.to.kind === 'base' && v.mode !== 'absolute') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mode'],
+        message: 'Kind "base" supports absolute mode only',
+      });
+    }
+    // Процентом платит только компания со своего постоянного счёта: у остальных
+    // сторон нет величины, от которой процент был бы осмыслен.
+    if (
+      v.mode === 'percent' &&
+      !(v.from !== undefined && Boolean(v.from.companyId) && v.from.slot === 'permanent')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mode'],
+        message: 'Percent mode requires a company permanent-rating source',
+      });
+    }
+
+    if (!v.from) {
+      if (v.amount === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['amount'],
+          message: 'Amount must be non-zero',
+        });
+      }
+      return;
+    }
+
+    const fromKind = sideKind(v.from);
+    if (!fromKind) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['from'],
+        message: 'Specify exactly one of personId / companyId',
+      });
+    } else if (!isRatingSlotAllowed(fromKind, v.from.slot)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['from', 'slot'],
+        message: `Slot "${v.from.slot}" is not applicable to a ${fromKind}`,
+      });
+    }
+
+    // Переменный рейтинг персонажа — «пропуск» на игровые действия, его выдаёт
+    // только мастер: переливать в него чужой рейтинг нельзя.
+    if (v.to.slot === 'variable') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['from'],
+        message: 'Variable rating can only be credited from admin resources',
+      });
+    }
+    if (v.amount <= 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['amount'],
+        message: 'Amount must be positive when a source is specified',
+      });
+    }
+    const sameEntity =
+      (v.from.personId !== undefined && v.from.personId === v.to.personId) ||
+      (v.from.companyId !== undefined && v.from.companyId === v.to.companyId);
+    if (sameEntity && v.from.slot === v.to.slot) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['from'],
+        message: 'Source and target must differ',
+      });
+    }
   });
 export type ManualRatingInput = z.infer<typeof ManualRatingInput>;
 

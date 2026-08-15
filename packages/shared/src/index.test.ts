@@ -22,6 +22,7 @@ import {
   JobRunDto,
   JobStatus,
   LoginInput,
+  ManualRatingInput,
   NominationCode,
   OscarDto,
   OscarWithdrawResultDto,
@@ -454,5 +455,127 @@ describe('jobs schemas', () => {
         output: null,
       }).success,
     ).toBe(true);
+  });
+});
+
+const UUID_2 = '9f1e5b2c-3d4a-4f6b-8c7d-1e2f3a4b5c6d';
+
+describe('ManualRatingInput', () => {
+  const target = { personId: UUID, slot: 'permanent' as const };
+
+  it('принимает начисление из админского ресурса', () => {
+    const parsed = ManualRatingInput.safeParse({ to: target, amount: 100 });
+    expect(parsed.success).toBe(true);
+    // Значения по умолчанию: обычное ручное начисление абсолютной величиной.
+    expect(parsed.success && parsed.data.to.kind).toBe('manual');
+    expect(parsed.success && parsed.data.mode).toBe('absolute');
+  });
+
+  it('принимает перевод от компании персонажу', () => {
+    expect(
+      ManualRatingInput.safeParse({
+        to: target,
+        from: { companyId: UUID_2, slot: 'budget' },
+        amount: 100,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('требует ровно одну сущность на стороне', () => {
+    expect(
+      ManualRatingInput.safeParse({
+        to: { personId: UUID, companyId: UUID_2, slot: 'permanent' },
+        amount: 100,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('не пускает слот чужого типа', () => {
+    expect(
+      ManualRatingInput.safeParse({ to: { companyId: UUID, slot: 'variable' }, amount: 100 })
+        .success,
+    ).toBe(false);
+    expect(
+      ManualRatingInput.safeParse({ to: { personId: UUID, slot: 'budget' }, amount: 100 }).success,
+    ).toBe(false);
+  });
+
+  it('пополняет переменный рейтинг только из админского ресурса', () => {
+    expect(
+      ManualRatingInput.safeParse({ to: { personId: UUID, slot: 'variable' }, amount: 5 }).success,
+    ).toBe(true);
+    expect(
+      ManualRatingInput.safeParse({
+        to: { personId: UUID, slot: 'variable' },
+        from: { personId: UUID_2, slot: 'permanent' },
+        amount: 5,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('требует положительную сумму при указанном источнике', () => {
+    expect(
+      ManualRatingInput.safeParse({
+        to: target,
+        from: { companyId: UUID_2, slot: 'permanent' },
+        amount: -5,
+      }).success,
+    ).toBe(false);
+    // Без источника отрицательная сумма — это прямое списание у получателя.
+    expect(ManualRatingInput.safeParse({ to: target, amount: -5 }).success).toBe(true);
+    expect(ManualRatingInput.safeParse({ to: target, amount: 0 }).success).toBe(false);
+  });
+
+  it('запрещает совпадение сущности и части рейтинга', () => {
+    expect(
+      ManualRatingInput.safeParse({
+        to: target,
+        from: { personId: UUID, slot: 'permanent' },
+        amount: 5,
+      }).success,
+    ).toBe(false);
+    // Разные части одного персонажа переводить можно.
+    expect(
+      ManualRatingInput.safeParse({
+        to: target,
+        from: { personId: UUID, slot: 'variable' },
+        amount: 5,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('процент допустим только с постоянного счёта компании', () => {
+    const percent = (from?: Record<string, unknown>) =>
+      ManualRatingInput.safeParse({
+        to: target,
+        ...(from && { from }),
+        amount: 25,
+        mode: 'percent',
+      }).success;
+
+    expect(percent({ companyId: UUID_2, slot: 'permanent' })).toBe(true);
+    expect(percent()).toBe(false);
+    expect(percent({ companyId: UUID_2, slot: 'budget' })).toBe(false);
+    expect(percent({ personId: UUID_2, slot: 'permanent' })).toBe(false);
+  });
+
+  it('база вносится только абсолютной величиной', () => {
+    expect(
+      ManualRatingInput.safeParse({
+        to: { personId: UUID, slot: 'permanent', kind: 'base' },
+        from: { companyId: UUID_2, slot: 'permanent' },
+        amount: 10,
+        mode: 'percent',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('база применима только к постоянному рейтингу персонажа', () => {
+    expect(
+      ManualRatingInput.safeParse({
+        to: { companyId: UUID, slot: 'permanent', kind: 'base' },
+        amount: 10,
+      }).success,
+    ).toBe(false);
   });
 });

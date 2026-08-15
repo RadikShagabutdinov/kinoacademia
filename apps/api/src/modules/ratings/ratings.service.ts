@@ -1,12 +1,19 @@
 import type {
   CompanyRatingDto,
+  ManualRatingKind,
   ManualRatingMode,
   PersonRatingAdminDto,
   PersonRatingDto,
+  RatingSlot,
   RatingTransactionDto,
   RatingTxKind,
 } from '@kinoacademia/shared';
-import { STAR_BONUS_MULTIPLIER, computeBreakupPenalty, computeIsStar } from '@kinoacademia/shared';
+import {
+  STAR_BONUS_MULTIPLIER,
+  computeBreakupPenalty,
+  computeIsStar,
+  computePercentAmount,
+} from '@kinoacademia/shared';
 import { db } from '../../db/client';
 import { setPenaltyHook, setPermanentMirrorHooks } from '../contracts/contracts.service';
 import { RatingError } from './errors';
@@ -188,7 +195,7 @@ const resolvePercentAmount = (percent: number, base: number): number => {
   if (percent === 0) {
     throw new RatingError('invalid_amount', 'Percent value must be non-zero');
   }
-  return Math.round((base * percent) / 100);
+  return computePercentAmount(percent, base);
 };
 
 const resolveManualAmount = async (
@@ -335,6 +342,198 @@ export const manualCompanyTransaction = async (
 
   emitCompany(input.companyId);
   return result;
+};
+
+/** Сторона ручной транзакции админа. Соответствие типа и `slot` гарантирует `ManualRatingInput`. */
+export type ManualTxParty = {
+  type: 'person' | 'company';
+  id: string;
+  slot: RatingSlot;
+};
+
+export type ManualTransactionInput = {
+  to: ManualTxParty & { kind: ManualRatingKind };
+  from?: ManualTxParty;
+  amount: number;
+  mode: ManualRatingMode;
+  comment?: string;
+  actorUserId: string;
+};
+
+/** Строка рейтинга стороны вместе с её типом — вызывающему коду не нужны приведения. */
+export type ManualTxPartyRow =
+  | { type: 'person'; row: PersonRatingRow; isStar: boolean }
+  | { type: 'company'; row: CompanyRatingRow };
+
+export type ManualTransactionResult = {
+  target: ManualTxPartyRow;
+  source: ManualTxPartyRow | null;
+  tx: RatingTransactionRow;
+};
+
+const creditPersonDelta = (
+  slot: RatingSlot,
+  kind: ManualRatingKind,
+  amount: number,
+): repo.PersonRatingDelta =>
+  slot === 'variable' ? { generated: amount } : personDeltaFor(kind, amount);
+
+const creditCompanyDelta = (
+  slot: RatingSlot,
+  kind: ManualRatingKind,
+  amount: number,
+): repo.CompanyRatingPatch =>
+  slot === 'budget'
+    ? { budget: amount }
+    : // `base` до компании не доходит — схема ввода допускает его только для персонажа.
+      companyDeltaFor(kind === 'base' ? 'manual' : kind, amount);
+
+/**
+ * У источника выбора составляющей нет: постоянный рейтинг всегда списывается из
+ * «ручной» составляющей, иначе пришлось бы «снимать оскар» или «снимать базу».
+ */
+const debitPersonDelta = (slot: RatingSlot, amount: number): repo.PersonRatingDelta =>
+  slot === 'variable' ? { generated: -amount } : { manualTopup: -amount };
+
+const debitCompanyDelta = (slot: RatingSlot, amount: number): repo.CompanyRatingPatch =>
+  slot === 'budget' ? { budget: -amount } : { manualTopup: -amount };
+
+/** Вид записи в журнале выводится из части рейтинга получателя. */
+const manualTxKind = (slot: RatingSlot, kind: ManualRatingKind): RatingTxKind => {
+  switch (slot) {
+    case 'variable':
+      return 'generated';
+    case 'budget':
+      return 'budget';
+    default:
+      return kind;
+  }
+};
+
+const readParty = async (exec: DbExecutor, party: ManualTxParty): Promise<ManualTxPartyRow> => {
+  if (party.type === 'company') {
+    return { type: 'company', row: await repo.ensureCompanyRating(exec, party.id) };
+  }
+  const row = await repo.ensurePersonRating(exec, party.id);
+  return { type: 'person', row, isStar: await isPersonStar(exec, row) };
+};
+
+const partyBalance = (party: ManualTxParty, read: ManualTxPartyRow): number =>
+  read.type === 'person'
+    ? party.slot === 'variable'
+      ? read.row.generated
+      : read.row.nowPermanent
+    : party.slot === 'budget'
+      ? read.row.budget
+      : read.row.nowPermanent;
+
+/**
+ * Ручная транзакция админа: начисление получателю в выбранную часть рейтинга и,
+ * если указан источник, зеркальное списание у него. Без источника рейтинг берётся
+ * из неисчерпаемого админского ресурса — тогда допустима и отрицательная сумма
+ * (прямое списание у получателя).
+ *
+ * Отрицательный рейтинг в игре невозможен (единственное исключение — скрытый
+ * мастерский модификатор), поэтому операция, уводящая затронутую часть в минус,
+ * отклоняется целиком.
+ */
+export const manualTransaction = async (
+  input: ManualTransactionInput,
+): Promise<ManualTransactionResult> => {
+  const result = await db.transaction(async (tx) => {
+    const targetBefore = await readParty(tx, input.to);
+    const sourceBefore = input.from ? await readParty(tx, input.from) : null;
+
+    let amount = input.amount;
+    if (input.mode === 'percent') {
+      // Процентом платит только компания со своего постоянного счёта — процент
+      // считается от её постоянного рейтинга (то же правило проверяет схема ввода).
+      if (!input.from || !sourceBefore || input.from.type !== 'company') {
+        throw new RatingError('invalid_amount', 'Percent mode requires a company source');
+      }
+      if (input.from.slot !== 'permanent') {
+        throw new RatingError('invalid_amount', 'Percent mode requires a permanent-rating source');
+      }
+      amount = resolvePercentAmount(input.amount, partyBalance(input.from, sourceBefore));
+      if (amount <= 0) {
+        throw new RatingError('invalid_amount', 'Percent resolves to a non-transferable amount');
+      }
+    }
+
+    if (input.from && sourceBefore) {
+      if (partyBalance(input.from, sourceBefore) - amount < 0) {
+        throw new RatingError(
+          'insufficient_rating',
+          'Source has not enough rating for this transfer',
+        );
+      }
+    } else if (partyBalance(input.to, targetBefore) + amount < 0) {
+      throw new RatingError('insufficient_rating', 'Target rating cannot go negative');
+    }
+
+    const touchedCompanies = new Set<string>();
+
+    if (input.from) {
+      if (input.from.type === 'person') {
+        const { companyId } = await applyPersonDeltaPropagating(
+          tx,
+          input.from.id,
+          debitPersonDelta(input.from.slot, amount),
+        );
+        if (companyId) touchedCompanies.add(companyId);
+      } else {
+        await repo.applyCompanyDelta(tx, input.from.id, debitCompanyDelta(input.from.slot, amount));
+      }
+    }
+
+    if (input.to.type === 'person') {
+      const { companyId } = await applyPersonDeltaPropagating(
+        tx,
+        input.to.id,
+        creditPersonDelta(input.to.slot, input.to.kind, amount),
+      );
+      if (companyId) touchedCompanies.add(companyId);
+    } else {
+      await repo.applyCompanyDelta(
+        tx,
+        input.to.id,
+        creditCompanyDelta(input.to.slot, input.to.kind, amount),
+      );
+    }
+
+    const txRow = await repo.insertTransaction(tx, {
+      ...(input.from?.type === 'person' && { donorPersonId: input.from.id }),
+      ...(input.from?.type === 'company' && { donorCompanyId: input.from.id }),
+      ...(input.to.type === 'person'
+        ? { recipientPersonId: input.to.id }
+        : { recipientCompanyId: input.to.id }),
+      amount,
+      kind: manualTxKind(input.to.slot, input.to.kind),
+      comment: input.comment ?? null,
+      authorUserId: input.actorUserId,
+    });
+
+    // Источник и получатель могут быть одной сущностью (перевод между своими
+    // частями рейтинга), поэтому итоговые строки перечитываем после обеих правок.
+    return {
+      target: await readParty(tx, input.to),
+      source: input.from ? await readParty(tx, input.from) : null,
+      tx: txRow,
+      touchedCompanies,
+    };
+  });
+
+  const persons = new Set<string>();
+  const companies = new Set(result.touchedCompanies);
+  for (const party of [input.to, input.from]) {
+    if (!party) continue;
+    if (party.type === 'person') persons.add(party.id);
+    else companies.add(party.id);
+  }
+  for (const personId of persons) emitPerson(personId);
+  for (const companyId of companies) emitCompany(companyId);
+
+  return { target: result.target, source: result.source, tx: result.tx };
 };
 
 export const applyOscarToPerson = (

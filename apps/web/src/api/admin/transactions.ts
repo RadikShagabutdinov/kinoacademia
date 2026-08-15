@@ -2,13 +2,16 @@ import { api } from '@/api/client';
 import type {
   CompanyRatingDto,
   ManualRatingInput,
-  PersonRatingDto,
+  PersonRatingAdminDto,
   RatingTransactionDto,
 } from '@kinoacademia/shared';
 
-export type ManualTransactionResponse =
-  | { rating: PersonRatingDto; transaction: RatingTransactionDto }
-  | { rating: CompanyRatingDto; transaction: RatingTransactionDto };
+/** `source` заполнен, только если рейтинг брали не из админского ресурса. */
+export type ManualTransactionResponse = {
+  target: PersonRatingAdminDto | CompanyRatingDto;
+  source: PersonRatingAdminDto | CompanyRatingDto | null;
+  transaction: RatingTransactionDto;
+};
 
 export const createManualTransaction = (
   input: ManualRatingInput,

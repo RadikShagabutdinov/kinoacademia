@@ -4,6 +4,7 @@ import {
   CompanyRatingDto,
   ManualRatingInput,
   PersonRatingAdminDto,
+  type RatingSlot,
   RatingTransactionDto,
 } from '@kinoacademia/shared';
 import type { Context } from 'hono';
@@ -52,16 +53,13 @@ const handleRatingError = (c: Context, err: unknown) => {
   throw err;
 };
 
-const ManualTransactionResponse = z.union([
-  z.object({
-    rating: PersonRatingAdminDto,
-    transaction: RatingTransactionDto,
-  }),
-  z.object({
-    rating: CompanyRatingDto,
-    transaction: RatingTransactionDto,
-  }),
-]);
+const ManualRatingSideDto = z.union([PersonRatingAdminDto, CompanyRatingDto]);
+
+const ManualTransactionResponse = z.object({
+  target: ManualRatingSideDto,
+  source: ManualRatingSideDto.nullable(),
+  transaction: RatingTransactionDto,
+});
 
 const createManualTransactionRoute = createRoute({
   method: 'post',
@@ -69,7 +67,7 @@ const createManualTransactionRoute = createRoute({
   tags: ['admin'],
   summary: 'Create manual rating transaction',
   description:
-    'Create manual rating transaction for person or company. Supports absolute/percent modes and manual/oscar/penalty kinds. Admin role required. See rating formulas in README for details.',
+    'Create manual rating transaction. Credits the target slot (person permanent/variable, company permanent/budget) and, when a source is given, debits the same amount from it; without a source the rating comes from admin resources. Admin role required. See rating formulas in README for details.',
   security: [{ cookieAuth: [] }],
   request: {
     body: {
@@ -98,78 +96,69 @@ const createManualTransactionRoute = createRoute({
   },
 });
 
+/** Схема ввода уже гарантирует ровно одну заполненную сторону; `null` — страховка на случай обхода. */
+const toParty = (side: {
+  personId?: string | undefined;
+  companyId?: string | undefined;
+  slot: RatingSlot;
+}): ratings.ManualTxParty | null => {
+  if (side.personId) return { type: 'person', id: side.personId, slot: side.slot };
+  if (side.companyId) return { type: 'company', id: side.companyId, slot: side.slot };
+  return null;
+};
+
+const serializeSide = (side: ratings.ManualTxPartyRow) =>
+  side.type === 'person'
+    ? ratings.toPersonRatingAdminDto(side.row, side.isStar)
+    : ratings.toCompanyRatingDto(side.row);
+
 adminTransactionsRoutes.openapi(createManualTransactionRoute, async (c) => {
   const user = c.get('user') as AuthVariables['user'];
-  const { targetPersonId, targetCompanyId, amount, mode, kind, comment } = c.req.valid('json');
+  const { to, from, amount, mode, comment } = c.req.valid('json');
 
-  try {
-    if (targetPersonId) {
-      if (kind === 'budget') {
-        return apiError(c, 400, {
-          code: 'validation_error',
-          message: 'Kind "budget" applies to a company only',
-        });
-      }
-      const result = await ratings.manualPersonTransaction({
-        personId: targetPersonId,
-        amount,
-        mode,
-        kind,
-        actorUserId: user.id,
-        ...(comment !== undefined && { comment }),
-      });
-      await writeAudit({
-        actorUserId: user.id,
-        action: 'transaction.manual',
-        entityType: 'person',
-        entityId: targetPersonId,
-        payload: { amount, mode, kind, comment: comment ?? null, transactionId: result.tx.id },
-      });
-      const { isStar } = await ratings.getPersonRating(targetPersonId);
-      return c.json(
-        {
-          rating: ratings.toPersonRatingAdminDto(result.row, isStar),
-          transaction: ratings.toTransactionDto(result.tx),
-        },
-        200,
-      );
-    }
-
-    if (targetCompanyId) {
-      if (kind === 'base') {
-        return apiError(c, 400, {
-          code: 'validation_error',
-          message: 'Kind "base" applies to a person only',
-        });
-      }
-      const result = await ratings.manualCompanyTransaction({
-        companyId: targetCompanyId,
-        amount,
-        mode,
-        kind,
-        actorUserId: user.id,
-        ...(comment !== undefined && { comment }),
-      });
-      await writeAudit({
-        actorUserId: user.id,
-        action: 'transaction.manual',
-        entityType: 'company',
-        entityId: targetCompanyId,
-        payload: { amount, mode, kind, comment: comment ?? null, transactionId: result.tx.id },
-      });
-      return c.json(
-        {
-          rating: ratings.toCompanyRatingDto(result.row),
-          transaction: ratings.toTransactionDto(result.tx),
-        },
-        200,
-      );
-    }
-
+  const target = toParty(to);
+  const source = from ? toParty(from) : null;
+  if (!target || (from && !source)) {
     return apiError(c, 400, {
       code: 'validation_error',
-      message: 'Specify exactly one target',
+      message: 'Specify exactly one of personId / companyId on each side',
     });
+  }
+
+  try {
+    const result = await ratings.manualTransaction({
+      to: { ...target, kind: to.kind },
+      ...(source && { from: source }),
+      amount,
+      mode,
+      actorUserId: user.id,
+      ...(comment !== undefined && { comment }),
+    });
+
+    await writeAudit({
+      actorUserId: user.id,
+      action: 'transaction.manual',
+      entityType: target.type,
+      entityId: target.id,
+      payload: {
+        amount: result.tx.amount,
+        mode,
+        kind: result.tx.kind,
+        toSlot: target.slot,
+        from: source && { type: source.type, id: source.id, slot: source.slot },
+        comment: comment ?? null,
+        transactionId: result.tx.id,
+      },
+    });
+
+    return c.json(
+      {
+        target: serializeSide(result.target),
+        source: result.source ? serializeSide(result.source) : null,
+        transaction: ratings.toTransactionDto(result.tx),
+      },
+      200,
+    );
   } catch (err) {
     return handleRatingError(c, err);
   }

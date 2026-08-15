@@ -783,3 +783,201 @@ describe('star thresholds (via getPersonRating)', () => {
     expect(isStar).toBe(false);
   });
 });
+
+describe('manualTransaction', () => {
+  it('из админского ресурса начисляет в постоянный рейтинг персонажа', async () => {
+    const p = seedPerson();
+    const result = await service.manualTransaction({
+      to: { type: 'person', id: p.personId, slot: 'permanent', kind: 'manual' },
+      amount: 100,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+
+    expect(result.source).toBeNull();
+    expect(personRows.get(p.personId)?.manualTopup).toBe(100);
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(100);
+    expect(result.tx.kind).toBe('manual');
+    expect(result.tx.donorPersonId).toBeNull();
+    expect(result.tx.recipientPersonId).toBe(p.personId);
+  });
+
+  it('из админского ресурса начисляет в переменный рейтинг, не трогая постоянный', async () => {
+    const p = seedPerson();
+    const result = await service.manualTransaction({
+      to: { type: 'person', id: p.personId, slot: 'variable', kind: 'manual' },
+      amount: 7,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+
+    expect(personRows.get(p.personId)?.generated).toBe(7);
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(0);
+    expect(result.tx.kind).toBe('generated');
+  });
+
+  it('из админского ресурса пополняет бюджет компании', async () => {
+    const c = seedCompany();
+    const result = await service.manualTransaction({
+      to: { type: 'company', id: c.companyId, slot: 'budget', kind: 'manual' },
+      amount: 500,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(c.companyId)?.budget).toBe(500);
+    expect(companyRows.get(c.companyId)?.nowPermanent).toBe(0);
+    expect(result.tx.kind).toBe('budget');
+  });
+
+  it('переводит постоянный рейтинг персонажа в бюджет компании одной записью', async () => {
+    const p = seedPerson({ base: 300, nowPermanent: 300 });
+    const c = seedCompany();
+
+    const result = await service.manualTransaction({
+      to: { type: 'company', id: c.companyId, slot: 'budget', kind: 'manual' },
+      from: { type: 'person', id: p.personId, slot: 'permanent' },
+      amount: 100,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+
+    expect(personRows.get(p.personId)?.manualTopup).toBe(-100);
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(200);
+    expect(companyRows.get(c.companyId)?.budget).toBe(100);
+    expect(result.tx.donorPersonId).toBe(p.personId);
+    expect(result.tx.recipientCompanyId).toBe(c.companyId);
+    expect(result.tx.amount).toBe(100);
+  });
+
+  it('списание у сотрудника на постоянном контракте тянет капитализацию его компании', async () => {
+    const employer = seedCompany({ employeePermanent: 300, nowPermanent: 300 });
+    const p = seedPerson({ base: 300, nowPermanent: 300 });
+    hireToCompany(p.personId, employer.companyId);
+    const recipient = seedCompany();
+
+    await service.manualTransaction({
+      to: { type: 'company', id: recipient.companyId, slot: 'budget', kind: 'manual' },
+      from: { type: 'person', id: p.personId, slot: 'permanent' },
+      amount: 100,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(employer.companyId)?.employeePermanent).toBe(200);
+    expect(companyRows.get(employer.companyId)?.nowPermanent).toBe(200);
+    expect(companyRows.get(recipient.companyId)?.budget).toBe(100);
+  });
+
+  it('переводит бюджет одной компании в постоянный рейтинг другой', async () => {
+    const from = seedCompany({ budget: 400 });
+    const to = seedCompany();
+
+    await service.manualTransaction({
+      to: { type: 'company', id: to.companyId, slot: 'permanent', kind: 'manual' },
+      from: { type: 'company', id: from.companyId, slot: 'budget' },
+      amount: 150,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+
+    expect(companyRows.get(from.companyId)?.budget).toBe(250);
+    expect(companyRows.get(to.companyId)?.manualTopup).toBe(150);
+    expect(companyRows.get(to.companyId)?.nowPermanent).toBe(150);
+  });
+
+  it('переводит переменный рейтинг персонажа в постоянный без множителя Звезды', async () => {
+    const donor = seedPerson({ generated: 40, base: 1000, nowPermanent: 1000 });
+    personHasContract.set(donor.personId, true);
+    const recipient = seedPerson();
+
+    await service.manualTransaction({
+      to: { type: 'person', id: recipient.personId, slot: 'permanent', kind: 'manual' },
+      from: { type: 'person', id: donor.personId, slot: 'variable' },
+      amount: 10,
+      mode: 'absolute',
+      actorUserId: ACTOR,
+    });
+
+    expect(personRows.get(donor.personId)?.generated).toBe(30);
+    expect(personRows.get(recipient.personId)?.manualTopup).toBe(10);
+    expect(personRows.get(recipient.personId)?.nowPermanent).toBe(10);
+  });
+
+  it('процент считается от постоянного рейтинга компании-источника', async () => {
+    const from = seedCompany({ manualTopup: 800, nowPermanent: 800 });
+    const p = seedPerson();
+
+    const result = await service.manualTransaction({
+      to: { type: 'person', id: p.personId, slot: 'permanent', kind: 'manual' },
+      from: { type: 'company', id: from.companyId, slot: 'permanent' },
+      amount: 25,
+      mode: 'percent',
+      actorUserId: ACTOR,
+    });
+
+    expect(result.tx.amount).toBe(200);
+    expect(companyRows.get(from.companyId)?.nowPermanent).toBe(600);
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(200);
+  });
+
+  it('отклоняет процент без источника и с источника, не являющегося постоянным счётом компании', async () => {
+    const p = seedPerson({ base: 400, nowPermanent: 400 });
+    const from = seedCompany({ budget: 800 });
+
+    await expect(
+      service.manualTransaction({
+        to: { type: 'person', id: p.personId, slot: 'permanent', kind: 'manual' },
+        amount: 25,
+        mode: 'percent',
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_amount' });
+
+    await expect(
+      service.manualTransaction({
+        to: { type: 'person', id: p.personId, slot: 'permanent', kind: 'manual' },
+        from: { type: 'company', id: from.companyId, slot: 'budget' },
+        amount: 25,
+        mode: 'percent',
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_amount' });
+
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(400);
+    expect(transactions).toHaveLength(0);
+  });
+
+  it('отклоняет перевод, если у источника не хватает рейтинга', async () => {
+    const from = seedPerson({ base: 50, nowPermanent: 50 });
+    const to = seedPerson();
+
+    await expect(
+      service.manualTransaction({
+        to: { type: 'person', id: to.personId, slot: 'permanent', kind: 'manual' },
+        from: { type: 'person', id: from.personId, slot: 'permanent' },
+        amount: 100,
+        mode: 'absolute',
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'insufficient_rating' });
+
+    expect(personRows.get(from.personId)?.nowPermanent).toBe(50);
+    expect(transactions).toHaveLength(0);
+  });
+
+  it('отклоняет админское списание, уводящее получателя в минус', async () => {
+    const p = seedPerson({ base: 30, nowPermanent: 30 });
+
+    await expect(
+      service.manualTransaction({
+        to: { type: 'person', id: p.personId, slot: 'permanent', kind: 'manual' },
+        amount: -50,
+        mode: 'absolute',
+        actorUserId: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: 'insufficient_rating' });
+
+    expect(personRows.get(p.personId)?.nowPermanent).toBe(30);
+  });
+});

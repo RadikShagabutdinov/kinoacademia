@@ -1,6 +1,7 @@
 export type RatingErrorCode =
   | 'self_transfer'
   | 'insufficient_generated'
+  | 'insufficient_rating'
   | 'invalid_amount'
   | 'not_implemented'
   | 'person_not_found'
@@ -25,6 +26,7 @@ export const ratingErrorStatus = (code: RatingErrorCode): 400 | 404 | 409 | 501 
       return 501;
     case 'self_transfer':
     case 'insufficient_generated':
+    case 'insufficient_rating':
     case 'duplicate_randomizer_target':
       return 409;
     default:
