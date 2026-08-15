@@ -10,7 +10,8 @@ export type OscarErrorCode =
   | 'film_not_in_company'
   | 'already_awarded'
   | 'requires_film'
-  | 'requires_person';
+  | 'requires_person'
+  | 'insufficient_budget';
 
 export class OscarError extends Error {
   constructor(
@@ -38,6 +39,7 @@ export const oscarErrorStatus = (code: OscarErrorCode): 400 | 404 | 409 => {
     case 'person_not_in_film':
     case 'film_not_in_company':
     case 'already_awarded':
+    case 'insufficient_budget':
       return 409;
   }
 };

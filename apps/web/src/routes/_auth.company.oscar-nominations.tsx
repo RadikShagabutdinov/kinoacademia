@@ -81,7 +81,13 @@ function CompanyOscarNominationsPage() {
         )}
       </div>
 
-      <SubmitNominationDialog films={films} open={open} onOpenChange={setOpen} />
+      <SubmitNominationDialog
+        films={films}
+        nominationsCount={nominations.length}
+        companyId={company.id}
+        open={open}
+        onOpenChange={setOpen}
+      />
     </div>
   );
 }

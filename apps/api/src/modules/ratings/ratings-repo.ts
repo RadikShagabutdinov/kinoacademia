@@ -255,6 +255,26 @@ export const applyPersonDelta = async (
   return updatePersonRatingAbsolute(exec, personId, patch);
 };
 
+/**
+ * Строка рейтинга компании под `SELECT ... FOR UPDATE`. Нужна там, где решение
+ * принимается по текущему бюджету (например, платная подача номинации), чтобы
+ * параллельные запросы не прочитали одно и то же значение до списания.
+ */
+export const findCompanyRatingForUpdate = async (
+  exec: DbExecutor,
+  companyId: string,
+): Promise<CompanyRatingRow> => {
+  await ensureCompanyRating(exec, companyId);
+  const rows = await exec
+    .select()
+    .from(companyRatings)
+    .where(eq(companyRatings.companyId, companyId))
+    .for('update')
+    .limit(1);
+  if (!rows[0]) throw new Error('Company rating disappeared during lock');
+  return toCompanyRow(rows[0]);
+};
+
 export type CompanyRatingPatch = Partial<
   Pick<
     CompanyRatingRow,

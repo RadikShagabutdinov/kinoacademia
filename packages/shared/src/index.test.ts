@@ -41,6 +41,7 @@ import {
   WsEventEnvelope,
   canTransition,
   computeBreakupPenalty,
+  computeNominationCost,
 } from './index';
 
 const NOW = '2026-04-29T18:00:00.000Z';
@@ -243,6 +244,10 @@ describe('contract state machine', () => {
     expect(computeBreakupPenalty(101, false)).toBe(25);
     expect(computeBreakupPenalty(0, true)).toBe(0);
     expect(computeBreakupPenalty(-40, true)).toBe(0);
+  });
+
+  it('computeNominationCost растёт по шкале 0/100/100/200/300', () => {
+    expect([0, 1, 2, 3, 4, 10].map(computeNominationCost)).toEqual([0, 100, 100, 200, 300, 300]);
   });
 
   it('exports CAPITALIZATION_PER_EMPLOYEE_CAP constant', () => {

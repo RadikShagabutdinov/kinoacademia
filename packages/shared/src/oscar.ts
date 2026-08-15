@@ -5,6 +5,15 @@ import type { FilmRole } from './film';
 export const OSCAR_WIN_PERSON_BONUS = 200;
 export const OSCAR_WIN_COMPANY_BONUS = 500;
 
+// Стоимость подачи номинации растёт с числом уже поданных компанией номинаций:
+// первая бесплатна, 2-я и 3-я — по 100, 4-я — 200, все дальнейшие — по 300.
+export const NOMINATION_COST_TIERS = [0, 100, 100, 200] as const;
+export const NOMINATION_COST_BEYOND = 300;
+
+/** Стоимость следующей номинации компании; `previousCount` — сколько уже подано. */
+export const computeNominationCost = (previousCount: number): number =>
+  NOMINATION_COST_TIERS[previousCount] ?? NOMINATION_COST_BEYOND;
+
 export const NOMINATIONS = [
   'best_film',
   'best_actor',

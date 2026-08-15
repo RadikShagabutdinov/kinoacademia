@@ -1,10 +1,12 @@
 import {
   type CreateOscarNominationInput,
+  NOMINATION_LABELS,
   NOMINATION_TO_FILM_ROLE,
   OSCAR_WIN_COMPANY_BONUS,
   OSCAR_WIN_PERSON_BONUS,
   type OscarDto,
   type OscarNominationDetailDto,
+  computeNominationCost,
   isCinemaOnlyNomination,
 } from '@kinoacademia/shared';
 import { eq } from 'drizzle-orm';
@@ -12,6 +14,7 @@ import { db } from '../../db/client';
 import { persons } from '../../db/schema';
 import { findCompanyById } from '../companies/companies-repo';
 import * as filmsRepo from '../films/films-repo';
+import * as ratingsRepo from '../ratings/ratings-repo';
 import * as ratings from '../ratings/ratings.service';
 import { OscarError } from './errors';
 import { oscarsEmitter } from './events';
@@ -49,11 +52,19 @@ export type SubmitNominationInput = CreateOscarNominationInput & {
    * head/cinema получит 409 closed_nomination.
    */
   allowClosed?: boolean;
+  /**
+   * Списывать ли стоимость подачи с бюджета компании-создателя фильма.
+   * Роут выставляет `false` для админа — админские подачи служебные и бесплатны,
+   * но всё равно учитываются в счётчике для последующих платных подач.
+   */
+  chargeCompany?: boolean;
 };
 
 /**
- * Подача номинации. Рейтинг за неё не начисляется: по правилам игры начисления
- * получают только победители церемонии (см. `awardOscar`).
+ * Подача номинации. Стоит компании переменного рейтинга (бюджета) по прогрессивной
+ * шкале от числа уже поданных ею номинаций — см. `computeNominationCost`. Рейтинг за
+ * подачу никому не начисляется: начисления получают только победители церемонии
+ * (см. `awardOscar`).
  */
 export const submitNomination = async (input: SubmitNominationInput): Promise<OscarRow> => {
   const { nominationCode, filmId = null, personId = null } = input;
@@ -102,6 +113,29 @@ export const submitNomination = async (input: SubmitNominationInput): Promise<Os
             `Person must be assigned to film with role "${requiredRole}" for nomination "${nominationCode}"`,
           );
         }
+      }
+
+      // Блокируем строку рейтинга до чтения счётчика: иначе две параллельные
+      // подачи посчитают одну и ту же стоимость и спишут меньше положенного.
+      const rating = await ratingsRepo.findCompanyRatingForUpdate(tx, film.companyId);
+      const cost = computeNominationCost(await repo.countCompanyNominations(tx, film.companyId));
+
+      if (input.chargeCompany !== false && cost > 0) {
+        if (rating.budget < cost) {
+          throw new OscarError(
+            'insufficient_budget',
+            `Недостаточно бюджета: нужно ${cost}, доступно ${rating.budget}`,
+          );
+        }
+        await ratings.manualCompanyTransaction({
+          companyId: film.companyId,
+          amount: -cost,
+          kind: 'budget',
+          mode: 'absolute',
+          comment: `Подача номинации: ${NOMINATION_LABELS[nominationCode]}`,
+          actorUserId: input.actorUserId,
+          exec: tx,
+        });
       }
     }
 

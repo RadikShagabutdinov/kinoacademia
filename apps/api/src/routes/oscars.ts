@@ -186,6 +186,7 @@ oscarsRoutes.openapi(submitNominationRoute, async (c) => {
       ...data,
       actorUserId: user.id,
       allowClosed: user.role === 'admin',
+      chargeCompany: user.role !== 'admin',
     });
     await writeAudit({
       actorUserId: user.id,

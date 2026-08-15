@@ -1,5 +1,5 @@
 import type { NominationCode } from '@kinoacademia/shared';
-import { desc, eq, sql } from 'drizzle-orm';
+import { count, desc, eq, sql } from 'drizzle-orm';
 import type { Database } from '../../db/client';
 import { db } from '../../db/client';
 import { companies, films, oscars, persons } from '../../db/schema';
@@ -71,6 +71,22 @@ export const insertOscar = async (
   const row = rows[0];
   if (!row) throw new Error('Failed to insert oscar');
   return toRow(row);
+};
+
+/**
+ * Сколько номинаций компания подала за всё время (по всем своим фильмам).
+ * Используется для прогрессивной стоимости подачи — см. `computeNominationCost`.
+ */
+export const countCompanyNominations = async (
+  exec: DbExecutor,
+  companyId: string,
+): Promise<number> => {
+  const rows = await exec
+    .select({ n: count() })
+    .from(oscars)
+    .innerJoin(films, eq(films.id, oscars.filmId))
+    .where(eq(films.companyId, companyId));
+  return rows[0]?.n ?? 0;
 };
 
 export const setWinner = async (exec: DbExecutor, id: string): Promise<OscarRow | null> => {

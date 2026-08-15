@@ -12,6 +12,7 @@ const assignments: Array<{
 const persons = new Set<string>();
 const personOscarBalance = new Map<string, number>();
 const companyOscarBalance = new Map<string, number>();
+const companyBudget = new Map<string, number>();
 
 vi.mock('../../db/client', () => {
   const fakeDb = {
@@ -64,6 +65,9 @@ vi.mock('./oscars-repo', () => ({
     oscarRows.set(row.id, row);
     return row;
   },
+  countCompanyNominations: async (_e: unknown, companyId: string) =>
+    [...oscarRows.values()].filter((o) => o.filmId && films.get(o.filmId)?.companyId === companyId)
+      .length,
   setWinner: async (_e: unknown, id: string) => {
     const cur = oscarRows.get(id);
     if (!cur) return null;
@@ -85,13 +89,22 @@ vi.mock('../ratings/ratings.service', () => ({
     );
     return { row: {}, tx: {} };
   },
-  manualCompanyTransaction: async (input: { companyId: string; amount: number }) => {
-    companyOscarBalance.set(
-      input.companyId,
-      (companyOscarBalance.get(input.companyId) ?? 0) + input.amount,
-    );
+  manualCompanyTransaction: async (input: {
+    companyId: string;
+    amount: number;
+    kind?: string;
+  }) => {
+    const target = input.kind === 'budget' ? companyBudget : companyOscarBalance;
+    target.set(input.companyId, (target.get(input.companyId) ?? 0) + input.amount);
     return { row: {}, tx: {} };
   },
+}));
+
+vi.mock('../ratings/ratings-repo', () => ({
+  findCompanyRatingForUpdate: async (_e: unknown, companyId: string) => ({
+    companyId,
+    budget: companyBudget.get(companyId) ?? 0,
+  }),
 }));
 
 // Замена для drizzle-orm `eq` — используем чтобы persons.select().where()...
@@ -108,6 +121,7 @@ const reset = () => {
   persons.clear();
   personOscarBalance.clear();
   companyOscarBalance.clear();
+  companyBudget.clear();
 
   // Эмулируем `tx.select().from(persons).where(eq(persons.id, id)).limit(1)`,
   // возвращая запись если personId есть в множестве `persons`.
@@ -140,22 +154,71 @@ beforeEach(reset);
 const ACTOR = randomUUID();
 
 describe('submitNomination', () => {
-  it('не начисляет рейтинг за подачу номинации', async () => {
+  /** Компания с фильмом, режиссёром и заданным бюджетом. */
+  const seedCompany = (budget: number) => {
     const filmId = randomUUID();
     const companyId = randomUUID();
     const personId = randomUUID();
     films.set(filmId, { id: filmId, companyId });
     persons.add(personId);
     assignments.push({ filmId, personId, role: 'director' });
+    companyBudget.set(companyId, budget);
+    return { filmId, companyId, personId };
+  };
 
-    await service.submitNomination({
+  const submit = (filmId: string, personId: string, chargeCompany = true) =>
+    service.submitNomination({
       filmId,
       personId,
       nominationCode: 'best_film',
       actorUserId: ACTOR,
+      chargeCompany,
     });
 
+  it('не начисляет рейтинг персонажу за подачу номинации', async () => {
+    const { filmId, personId } = seedCompany(1000);
+
+    await submit(filmId, personId);
+
     expect(personOscarBalance.get(personId)).toBeUndefined();
+  });
+
+  it('списывает 0/100/100/200/300 за первые пять номинаций компании', async () => {
+    const { filmId, companyId, personId } = seedCompany(1000);
+    const spent: number[] = [];
+
+    for (let i = 0; i < 5; i++) {
+      const before = companyBudget.get(companyId) ?? 0;
+      await submit(filmId, personId);
+      spent.push(before - (companyBudget.get(companyId) ?? 0));
+    }
+
+    expect(spent).toEqual([0, 100, 100, 200, 300]);
+    expect(companyBudget.get(companyId)).toBe(1000 - 700);
+  });
+
+  it('отказывает при нехватке бюджета и не создаёт номинацию', async () => {
+    const { filmId, companyId, personId } = seedCompany(50);
+    await submit(filmId, personId); // первая бесплатна
+    const countAfterFirst = oscarRows.size;
+
+    await expect(submit(filmId, personId)).rejects.toMatchObject({
+      code: 'insufficient_budget',
+    });
+    expect(oscarRows.size).toBe(countAfterFirst);
+    expect(companyBudget.get(companyId)).toBe(50);
+  });
+
+  it('админская подача бесплатна, но учитывается в счётчике', async () => {
+    const { filmId, companyId, personId } = seedCompany(1000);
+
+    await submit(filmId, personId, false);
+    await submit(filmId, personId, false);
+    expect(companyBudget.get(companyId)).toBe(1000);
+
+    // Третья подача — уже платная по счётчику, стоит 100.
+    await submit(filmId, personId);
+    expect(companyBudget.get(companyId)).toBe(900);
   });
 
   it('отбивает категорию contribution для head (allowClosed=false)', async () => {

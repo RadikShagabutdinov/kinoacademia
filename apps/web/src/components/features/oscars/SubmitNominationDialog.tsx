@@ -17,6 +17,7 @@ import {
   NOMINATION_LABELS,
   NOMINATION_TO_FILM_ROLE,
   type NominationCode,
+  computeNominationCost,
   isCinemaOnlyNomination,
 } from '@kinoacademia/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -28,11 +29,20 @@ const CINEMA_NOMINATIONS = (Object.keys(NOMINATION_TO_FILM_ROLE) as NominationCo
 
 type Props = {
   films: FilmListItem[];
+  /** Сколько номинаций компания уже подала — от этого зависит стоимость следующей. */
+  nominationsCount: number;
+  companyId: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
 };
 
-export const SubmitNominationDialog = ({ films, open, onOpenChange }: Props) => {
+export const SubmitNominationDialog = ({
+  films,
+  nominationsCount,
+  companyId,
+  open,
+  onOpenChange,
+}: Props) => {
   const qc = useQueryClient();
   const [filmId, setFilmId] = useState('');
   const [nominationCode, setNominationCode] = useState<NominationCode>('best_film');
@@ -44,6 +54,9 @@ export const SubmitNominationDialog = ({ films, open, onOpenChange }: Props) => 
     queryFn: () => getFilm(filmId),
     enabled: Boolean(filmId),
   });
+
+  const cost = computeNominationCost(nominationsCount);
+  const nextCost = computeNominationCost(nominationsCount + 1);
 
   const requiredRole = NOMINATION_TO_FILM_ROLE[nominationCode];
   const eligibleAssignments =
@@ -60,6 +73,7 @@ export const SubmitNominationDialog = ({ films, open, onOpenChange }: Props) => 
     mutationFn: () => submitNomination({ filmId, personId, nominationCode }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['oscars'] });
+      qc.invalidateQueries({ queryKey: ['ratings', 'company', companyId] });
       reset();
       onOpenChange(false);
     },
@@ -97,6 +111,12 @@ export const SubmitNominationDialog = ({ films, open, onOpenChange }: Props) => 
             подходящей для выбранной номинации.
           </DialogDescription>
         </DialogHeader>
+
+        <NoticeBox tone={cost > 0 ? 'star' : 'muted'}>
+          {cost > 0
+            ? `Стоимость подачи — ${cost} рейтинга из бюджета компании. Следующая номинация будет стоить ${nextCost}.`
+            : `Первая номинация бесплатна. Следующая будет стоить ${nextCost} рейтинга из бюджета компании.`}
+        </NoticeBox>
 
         <div className="grid gap-3">
           <div className="grid gap-2">
