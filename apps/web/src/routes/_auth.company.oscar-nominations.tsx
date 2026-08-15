@@ -3,11 +3,13 @@ import { listCompanyFilms } from '@/api/films';
 import { listCompanyOscars } from '@/api/oscars';
 import { NominationsTable } from '@/components/features/oscars/NominationsTable';
 import { SubmitNominationDialog } from '@/components/features/oscars/SubmitNominationDialog';
+import { WithdrawNominationButton } from '@/components/features/oscars/WithdrawNominationButton';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { NoticeBox } from '@/components/ui/notice-box';
 import { SectionLabel } from '@/components/ui/typography';
 import { useWsChannel } from '@/hooks/useWs';
+import { computeNominationCost } from '@kinoacademia/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { Award } from 'lucide-react';
@@ -77,7 +79,17 @@ function CompanyOscarNominationsPage() {
         {isPending ? (
           <p className="text-sm text-[var(--color-subtle-fg)]">Загрузка…</p>
         ) : (
-          <NominationsTable rows={nominations} emptyMessage="Пока ни одна номинация не подана." />
+          <NominationsTable
+            rows={nominations}
+            actionsHeader="Действия"
+            renderActions={(row) => (
+              <WithdrawNominationButton
+                row={row}
+                refund={computeNominationCost(nominations.length - 1)}
+              />
+            )}
+            emptyMessage="Пока ни одна номинация не подана."
+          />
         )}
       </div>
 

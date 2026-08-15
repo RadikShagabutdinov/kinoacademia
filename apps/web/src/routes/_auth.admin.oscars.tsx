@@ -3,9 +3,11 @@ import { AdminLayout } from '@/components/features/admin/AdminLayout';
 import { AwardOscarButton } from '@/components/features/admin/oscars/AwardOscarButton';
 import { SubmitContributionForm } from '@/components/features/admin/oscars/SubmitContributionForm';
 import { NominationsTable } from '@/components/features/oscars/NominationsTable';
+import { WithdrawNominationButton } from '@/components/features/oscars/WithdrawNominationButton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWsChannel } from '@/hooks/useWs';
+import { computeNominationCost } from '@kinoacademia/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { Award } from 'lucide-react';
@@ -50,7 +52,18 @@ function AdminOscarsPage() {
                 <NominationsTable
                   rows={data}
                   actionsHeader="Действия"
-                  renderActions={(row) => <AwardOscarButton row={row} />}
+                  renderActions={(row) => (
+                    <div className="flex items-start gap-2">
+                      <AwardOscarButton row={row} />
+                      <WithdrawNominationButton
+                        row={row}
+                        refund={computeNominationCost(
+                          data.filter((r) => r.companyId && r.companyId === row.companyId).length -
+                            1,
+                        )}
+                      />
+                    </div>
+                  )}
                 />
               )}
             </CardContent>

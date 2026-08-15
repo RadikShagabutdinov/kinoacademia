@@ -13,6 +13,7 @@ export type OscarEvent = {
 type OscarEvents = {
   'oscar.nominated': [OscarEvent];
   'oscar.awarded': [OscarEvent];
+  'oscar.withdrawn': [OscarEvent];
 };
 
 export const oscarsEmitter = new EventEmitter<OscarEvents>();

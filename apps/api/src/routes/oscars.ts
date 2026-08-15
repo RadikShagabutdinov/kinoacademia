@@ -4,6 +4,7 @@ import {
   CreateOscarNominationInput,
   OscarDto,
   OscarNominationDetailDto,
+  OscarWithdrawResultDto,
   Uuid,
 } from '@kinoacademia/shared';
 import type { Context } from 'hono';
@@ -67,6 +68,31 @@ const submitNominationRoute = createRoute({
     201: {
       description: 'Nomination created',
       content: { 'application/json': { schema: OscarDto.openapi('OscarDto') } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: errorResponses[409],
+  },
+});
+
+const withdrawNominationRoute = createRoute({
+  middleware: [requireRole('head', 'admin')] as const,
+  method: 'delete',
+  path: '/nominations/:id',
+  tags: ['oscars'],
+  summary: 'Withdraw Oscar nomination',
+  description:
+    'Отзыв поданной номинации: строка удаляется, компании возвращается стоимость верхней ступени шкалы. head — только по своей компании, admin — любую. Победившую номинацию отозвать нельзя.',
+  security: [{ cookieAuth: [] }],
+  request: { params: z.object({ id: Uuid }) },
+  responses: {
+    200: {
+      description: 'Nomination withdrawn',
+      content: {
+        'application/json': { schema: OscarWithdrawResultDto.openapi('OscarWithdrawResultDto') },
+      },
     },
     400: errorResponses[400],
     401: errorResponses[401],
@@ -200,6 +226,45 @@ oscarsRoutes.openapi(submitNominationRoute, async (c) => {
       },
     });
     return c.json(oscars.toOscarDto(created), 201);
+  } catch (err) {
+    return handleOscarError(c, err);
+  }
+});
+
+oscarsRoutes.openapi(withdrawNominationRoute, async (c) => {
+  const user = c.get('user');
+  const { id } = c.req.valid('param');
+
+  const nomination = await oscars.findOscarById(id);
+  if (!nomination) return apiError(c, 404, { code: 'not_found', message: 'Nomination not found' });
+
+  // head отзывает только номинации своей компании; закрытая `contribution` без
+  // фильма к компании не привязана, поэтому доступна только админу.
+  if (user.role === 'head') {
+    if (!nomination.filmId) {
+      return apiError(c, 403, { code: 'forbidden', message: 'Not your nomination' });
+    }
+    const film = await findFilmById(nomination.filmId);
+    if (!film) return apiError(c, 404, { code: 'not_found', message: 'Film not found' });
+    const owns = await ownsCompany(db, user.id, film.companyId);
+    if (!owns) return apiError(c, 403, { code: 'forbidden', message: 'Not your company' });
+  }
+
+  try {
+    const { refunded } = await oscars.withdrawNomination({ oscarId: id, actorUserId: user.id });
+    await writeAudit({
+      actorUserId: user.id,
+      action: 'oscar.withdraw',
+      entityType: 'oscar',
+      entityId: id,
+      payload: {
+        nominationCode: nomination.nominationCode,
+        filmId: nomination.filmId,
+        personId: nomination.personId,
+        refunded,
+      },
+    });
+    return c.json({ id, refunded }, 200);
   } catch (err) {
     return handleOscarError(c, err);
   }

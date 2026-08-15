@@ -53,6 +53,10 @@ const attachListeners = (): void => {
   oscarsEmitter.on('oscar.awarded', (evt) => {
     hub.broadcast('oscars', 'oscar.awarded', evt);
   });
+
+  oscarsEmitter.on('oscar.withdrawn', (evt) => {
+    hub.broadcast('oscars', 'oscar.withdrawn', evt);
+  });
 };
 
 export const _resetForTests = (): void => {

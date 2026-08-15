@@ -24,6 +24,7 @@ import {
   LoginInput,
   NominationCode,
   OscarDto,
+  OscarWithdrawResultDto,
   PersonDto,
   PersonRatingAdminDto,
   PersonRatingDto,
@@ -308,6 +309,11 @@ describe('oscar / ws / api error', () => {
         updatedAt: NOW,
       }).success,
     ).toBe(true);
+  });
+
+  it('parses OscarWithdrawResultDto', () => {
+    expect(OscarWithdrawResultDto.safeParse({ id: UUID, refunded: 100 }).success).toBe(true);
+    expect(OscarWithdrawResultDto.safeParse({ id: UUID, refunded: 1.5 }).success).toBe(false);
   });
 
   it('parses WsEventEnvelope', () => {

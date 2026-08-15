@@ -20,6 +20,7 @@ export const AUDIT_ACTIONS = [
   'film.assignment.create',
   'film.assignment.delete',
   'oscar.nominate',
+  'oscar.withdraw',
   'oscar.award',
   'scan.upload',
   'scan.delete',

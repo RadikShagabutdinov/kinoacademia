@@ -157,6 +157,70 @@ export const submitNomination = async (input: SubmitNominationInput): Promise<Os
   return result;
 };
 
+export type WithdrawNominationInput = {
+  oscarId: string;
+  actorUserId: string;
+};
+
+/**
+ * Отзыв поданной номинации: строка удаляется, а компании возвращается стоимость
+ * верхней ступени шкалы — цена последней по счёту номинации. Возврат считается по
+ * счётчику, а не по фактически списанному: подача и отзыв подряд компенсируют друг
+ * друга при любой глубине шкалы. Победившую номинацию отозвать нельзя.
+ */
+export const withdrawNomination = async (
+  input: WithdrawNominationInput,
+): Promise<{ oscarId: string; refunded: number }> => {
+  const result = await db.transaction(async (tx) => {
+    const current = await repo.findOscarByIdForUpdate(tx, input.oscarId);
+    if (!current) throw new OscarError('oscar_not_found', 'Oscar not found');
+    if (current.isWinner) {
+      throw new OscarError('already_awarded', 'Победившую номинацию отозвать нельзя');
+    }
+
+    let companyId: string | null = null;
+    let refunded = 0;
+
+    if (current.filmId) {
+      const film = await filmsRepo.findFilmById(tx, current.filmId);
+      companyId = film?.companyId ?? null;
+    }
+
+    if (companyId) {
+      await ratingsRepo.findCompanyRatingForUpdate(tx, companyId);
+      // В счётчик входит отзываемая номинация, поэтому `-1` даёт цену верхней ступени.
+      const count = await repo.countCompanyNominations(tx, companyId);
+      refunded = computeNominationCost(count - 1);
+
+      if (refunded > 0) {
+        await ratings.manualCompanyTransaction({
+          companyId,
+          amount: refunded,
+          kind: 'budget',
+          mode: 'absolute',
+          comment: `Отзыв номинации: ${NOMINATION_LABELS[current.nominationCode]}`,
+          actorUserId: input.actorUserId,
+          exec: tx,
+        });
+      }
+    }
+
+    await repo.deleteOscar(tx, input.oscarId);
+    return { row: current, companyId, refunded };
+  });
+
+  oscarsEmitter.emit('oscar.withdrawn', {
+    oscarId: result.row.id,
+    filmId: result.row.filmId,
+    personId: result.row.personId,
+    companyId: result.companyId,
+    nominationCode: result.row.nominationCode,
+    isWinner: false,
+  });
+
+  return { oscarId: result.row.id, refunded: result.refunded };
+};
+
 export type AwardOscarInput = {
   oscarId: string;
   actorUserId: string;

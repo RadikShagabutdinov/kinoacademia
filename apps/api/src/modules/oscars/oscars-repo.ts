@@ -98,6 +98,10 @@ export const setWinner = async (exec: DbExecutor, id: string): Promise<OscarRow 
   return rows[0] ? toRow(rows[0]) : null;
 };
 
+export const deleteOscar = async (exec: DbExecutor, id: string): Promise<void> => {
+  await exec.delete(oscars).where(eq(oscars.id, id));
+};
+
 const detailQuery = (exec: DbExecutor) =>
   exec
     .select({

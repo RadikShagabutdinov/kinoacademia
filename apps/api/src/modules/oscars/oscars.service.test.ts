@@ -68,6 +68,9 @@ vi.mock('./oscars-repo', () => ({
   countCompanyNominations: async (_e: unknown, companyId: string) =>
     [...oscarRows.values()].filter((o) => o.filmId && films.get(o.filmId)?.companyId === companyId)
       .length,
+  deleteOscar: async (_e: unknown, id: string) => {
+    oscarRows.delete(id);
+  },
   setWinner: async (_e: unknown, id: string) => {
     const cur = oscarRows.get(id);
     if (!cur) return null;
@@ -261,6 +264,95 @@ describe('submitNomination', () => {
         actorUserId: ACTOR,
       }),
     ).rejects.toMatchObject({ code: 'invalid_role_for_nomination' });
+  });
+});
+
+describe('withdrawNomination', () => {
+  const seedCompany = (budget: number) => {
+    const filmId = randomUUID();
+    const companyId = randomUUID();
+    const personId = randomUUID();
+    films.set(filmId, { id: filmId, companyId });
+    persons.add(personId);
+    assignments.push({ filmId, personId, role: 'director' });
+    companyBudget.set(companyId, budget);
+    return { filmId, companyId, personId };
+  };
+
+  const submit = (filmId: string, personId: string) =>
+    service.submitNomination({
+      filmId,
+      personId,
+      nominationCode: 'best_film',
+      actorUserId: ACTOR,
+    });
+
+  it('возвращает стоимость верхней ступени и удаляет номинацию', async () => {
+    const { filmId, companyId, personId } = seedCompany(1000);
+    await submit(filmId, personId);
+    await submit(filmId, personId);
+    const third = await submit(filmId, personId);
+    expect(companyBudget.get(companyId)).toBe(800);
+
+    const { refunded } = await service.withdrawNomination({
+      oscarId: third.id,
+      actorUserId: ACTOR,
+    });
+
+    expect(refunded).toBe(100);
+    expect(companyBudget.get(companyId)).toBe(900);
+    expect(oscarRows.has(third.id)).toBe(false);
+  });
+
+  it('подача и отзыв подряд компенсируют друг друга на любой глубине шкалы', async () => {
+    const { filmId, companyId, personId } = seedCompany(1000);
+    const created = [];
+    for (let i = 0; i < 4; i++) created.push(await submit(filmId, personId));
+    expect(companyBudget.get(companyId)).toBe(600);
+
+    for (const row of created.reverse()) {
+      await service.withdrawNomination({ oscarId: row.id, actorUserId: ACTOR });
+    }
+
+    expect(companyBudget.get(companyId)).toBe(1000);
+    expect(oscarRows.size).toBe(0);
+  });
+
+  it('победившую номинацию отозвать нельзя', async () => {
+    const { filmId, companyId, personId } = seedCompany(1000);
+    const created = await submit(filmId, personId);
+    await service.awardOscar({ oscarId: created.id, actorUserId: ACTOR });
+
+    await expect(
+      service.withdrawNomination({ oscarId: created.id, actorUserId: ACTOR }),
+    ).rejects.toMatchObject({ code: 'already_awarded' });
+    expect(oscarRows.has(created.id)).toBe(true);
+    expect(companyBudget.get(companyId)).toBe(1000);
+  });
+
+  it('отзыв contribution проходит без возврата', async () => {
+    const personId = randomUUID();
+    persons.add(personId);
+    const created = await service.submitNomination({
+      personId,
+      nominationCode: 'contribution',
+      actorUserId: ACTOR,
+      allowClosed: true,
+    });
+
+    const { refunded } = await service.withdrawNomination({
+      oscarId: created.id,
+      actorUserId: ACTOR,
+    });
+
+    expect(refunded).toBe(0);
+    expect(oscarRows.size).toBe(0);
+  });
+
+  it('несуществующая номинация — oscar_not_found', async () => {
+    await expect(
+      service.withdrawNomination({ oscarId: randomUUID(), actorUserId: ACTOR }),
+    ).rejects.toMatchObject({ code: 'oscar_not_found' });
   });
 });
 

@@ -26,6 +26,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'film.assignment.create': 'Добавлен участник фильма',
   'film.assignment.delete': 'Удалён участник фильма',
   'oscar.nominate': 'Подана номинация',
+  'oscar.withdraw': 'Отозвана номинация',
   'oscar.award': 'Вручён Оскар',
   'scan.upload': 'Загружены сканы',
   'scan.delete': 'Удалены сканы',

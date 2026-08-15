@@ -89,5 +89,12 @@ export const OscarNominationDetailDto = z.object({
 });
 export type OscarNominationDetailDto = z.infer<typeof OscarNominationDetailDto>;
 
+// Результат отзыва номинации: сколько рейтинга вернулось в бюджет компании.
+export const OscarWithdrawResultDto = z.object({
+  id: Uuid,
+  refunded: z.number().int(),
+});
+export type OscarWithdrawResultDto = z.infer<typeof OscarWithdrawResultDto>;
+
 export const OscarAwardInput = z.object({}).strict().optional();
 export type OscarAwardInput = z.infer<typeof OscarAwardInput>;

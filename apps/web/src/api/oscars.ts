@@ -2,6 +2,7 @@ import type {
   CreateOscarNominationInput,
   OscarDto,
   OscarNominationDetailDto,
+  OscarWithdrawResultDto,
 } from '@kinoacademia/shared';
 import { api } from './client';
 
@@ -19,6 +20,9 @@ export const listFilmOscars = (filmId: string): Promise<OscarNominationDetailDto
 
 export const submitNomination = (input: CreateOscarNominationInput): Promise<OscarDto> =>
   api.post<OscarDto>('/oscars/nominations', input);
+
+export const withdrawNomination = (id: string): Promise<OscarWithdrawResultDto> =>
+  api.delete<OscarWithdrawResultDto>(`/oscars/nominations/${id}`);
 
 export const awardOscar = (id: string): Promise<OscarDto> =>
   api.post<OscarDto>(`/admin/oscars/${id}/award`, {});
