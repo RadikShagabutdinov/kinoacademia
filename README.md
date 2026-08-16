@@ -406,7 +406,7 @@ stateDiagram-v2
 | `POST` | `/api/contracts/my/:kind/:id/request-end` | владелец персонажа | 03 → 07 |
 | `POST` | `/api/contracts/my/:kind/:id/confirm-end` | владелец персонажа | 07 → 08 (если инициатор — компания) |
 | `POST` | `/api/contracts/my/:kind/:id/reject-end` | владелец персонажа | 07 → 09 (если инициатор — компания) |
-| `GET` | `/api/contracts/history` | info/admin | Лента переходов статусов с join по компании и персонажу. Фильтры query: `companyId`, `personId`, `limit` (≤500) |
+| `GET` | `/api/contracts/history` | info/admin | Лента переходов статусов с join по компании и персонажу. Фильтры query: `companyId`, `personId`, `branchCode` (отрасль компании), `limit` (≤500) |
 | `GET` | `/api/contracts/company/:companyId` | head/admin/info | Контракты компании |
 | `POST` | `/api/contracts/company/:companyId` | head своей / admin | Создать черновик (`{ kind, personId, companyId }`) |
 | `POST` | `/api/contracts/company/:companyId/:kind/:id/submit` | head/admin | 01 → 02 |
@@ -751,9 +751,9 @@ ENV-переменные фронта (опционально):
 | Путь | Что внутри |
 |---|---|
 | `/info/ratings` | Сводные таблицы рейтингов персонажей и компаний. Поиск по имени, сортировка по любой колонке. Realtime через WS-канал `ratings:all`. |
-| `/info/contracts-history` | Лента переходов статусов контрактов (`from → to` через `ContractStatusBadge`) с фильтрами по компании и персонажу. Источник — `GET /api/contracts/history`. |
+| `/info/contracts-history` | Лента переходов статусов контрактов (`from → to` через `ContractStatusBadge`). Серверные фильтры: отрасль, компания, персонаж (выбранная отрасль сужает список компаний); клиентские: тип контракта и «только разрывы». Списки компаний и персонажей берутся из справочников `GET /api/companies` и `GET /api/persons`, дополняясь именами из истории. Источник данных — `GET /api/contracts/history`. |
 | `/info/oscars` | Поданные номинации и результаты Оскара. Заглушка до реализации фильмов и Оскаров. |
-| `/info/films` | Список заявленных фильмов с режиссёрами, актёрами и типами контрактов. Заглушка до реализации фильмов и Оскаров. |
+| `/info/films` | Список заявленных фильмов с поиском по названию. Строка раскрывается в съёмочную группу (только назначенные роли) — состав догружается по `GET /api/films/:id` при раскрытии. |
 
 Доступ к `/info/*` контролируется в `beforeLoad` (`roleCode in {info, admin}`, иначе редирект на `/no-access`). Эндпоинт `GET /api/ratings/all` дополнительно возвращает мапы `personNames`/`companyNames`, чтобы избежать N+1 запросов с фронта. Разбивку персонажей он отдаёт свёрнутой; полную (с рандомайзером) даёт только `GET /api/admin/ratings/all` для роли `admin` — её использует досье персонажа в админке.
 

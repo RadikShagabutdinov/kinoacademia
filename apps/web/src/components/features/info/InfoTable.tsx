@@ -3,15 +3,17 @@ import { MonoValue } from '@/components/ui/typography';
 import { cn } from '@/lib/utils';
 import {
   type ColumnDef,
+  type ExpandedState,
   type SortingState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight } from 'lucide-react';
+import { Fragment, type ReactNode, useState } from 'react';
 
 type Props<TData> = {
   data: TData[];
@@ -22,11 +24,14 @@ type Props<TData> = {
   searchField?: keyof TData & string;
   searchPlaceholder?: string;
   emptyText?: string;
+  /** Если задан — строки раскрываются, а результат рендерится под строкой. */
+  renderExpanded?: (row: TData) => ReactNode;
 };
 
 /**
  * Плотная аналитическая таблица для мониторов менеджера информации:
- * сортировка по колонкам и опциональный поиск по одному текстовому полю.
+ * сортировка по колонкам, опциональный поиск по одному текстовому полю
+ * и опциональные раскрывающиеся строки.
  */
 export const InfoTable = <TData,>({
   data,
@@ -35,15 +40,24 @@ export const InfoTable = <TData,>({
   searchField,
   searchPlaceholder = 'Поиск...',
   emptyText = 'Нет данных',
+  renderExpanded,
 }: Props<TData>) => {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [expanded, setExpanded] = useState<ExpandedState>({});
+
+  const expandable = Boolean(renderExpanded);
+  // Колонка-шеврон не входит в `columns`, поэтому её нужно учитывать в colSpan.
+  const totalColumns = columns.length + (expandable ? 1 : 0);
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, globalFilter },
+    state: { sorting, globalFilter, expanded },
     onSortingChange: setSorting,
+    onExpandedChange: setExpanded,
+    getRowCanExpand: () => expandable,
+    getExpandedRowModel: getExpandedRowModel(),
     onGlobalFilterChange: setGlobalFilter,
     globalFilterFn: searchField
       ? (row, _columnId, filterValue: string) => {
@@ -78,6 +92,7 @@ export const InfoTable = <TData,>({
           <thead className="sticky top-0 bg-[var(--color-card)]">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-[var(--color-border)]">
+                {expandable && <th className="w-7 bg-[var(--color-card)] px-1 py-2" />}
                 {headerGroup.headers.map((header) => {
                   const canSort = header.column.getCanSort();
                   const sorted = header.column.getIsSorted();
@@ -114,7 +129,7 @@ export const InfoTable = <TData,>({
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={totalColumns}
                   className="px-2.5 py-8 text-center text-[var(--color-subtle-fg)]"
                 >
                   {emptyText}
@@ -122,20 +137,45 @@ export const InfoTable = <TData,>({
               </tr>
             ) : (
               table.getRowModel().rows.map((row, idx) => (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    'border-t border-[var(--color-hairline)] transition-colors hover:bg-[var(--color-muted)]',
-                    // Зебра: в макете чётные строки чуть темнее фона карточки.
-                    idx % 2 === 1 && 'bg-[var(--color-row-alt)]',
+                <Fragment key={row.id}>
+                  <tr
+                    className={cn(
+                      'border-t border-[var(--color-hairline)] transition-colors hover:bg-[var(--color-muted)]',
+                      // Зебра: в макете чётные строки чуть темнее фона карточки.
+                      idx % 2 === 1 && 'bg-[var(--color-row-alt)]',
+                    )}
+                  >
+                    {expandable && (
+                      <td className="px-1 py-2 align-middle">
+                        <button
+                          type="button"
+                          onClick={row.getToggleExpandedHandler()}
+                          aria-expanded={row.getIsExpanded()}
+                          aria-label={row.getIsExpanded() ? 'Свернуть' : 'Развернуть'}
+                          className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-subtle-fg)] hover:bg-[var(--color-muted)] hover:text-[var(--color-fg)]"
+                        >
+                          {row.getIsExpanded() ? (
+                            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                        </button>
+                      </td>
+                    )}
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-2.5 py-2 align-middle">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                  {renderExpanded && row.getIsExpanded() && (
+                    <tr className="border-t border-[var(--color-hairline)] bg-[var(--color-elevated)]">
+                      <td colSpan={totalColumns} className="px-3.5 py-3">
+                        {renderExpanded(row.original)}
+                      </td>
+                    </tr>
                   )}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-2.5 py-2 align-middle">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
+                </Fragment>
               ))
             )}
           </tbody>

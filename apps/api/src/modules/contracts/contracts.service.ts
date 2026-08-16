@@ -488,6 +488,7 @@ export const toHistoryDto = (row: repo.ContractHistoryRow): ContractStatusHistor
   comment: row.comment,
   companyId: row.companyId,
   companyName: row.companyName,
+  branchCode: row.branchCode,
   personId: row.personId,
   personDisplayName: row.personDisplayName,
 });

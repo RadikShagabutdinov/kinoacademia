@@ -1,4 +1,5 @@
 import type {
+  BranchCode,
   ContractActionInput,
   ContractDto,
   ContractKind,
@@ -10,6 +11,7 @@ import { api } from './client';
 export type ContractsHistoryFilter = {
   companyId?: string;
   personId?: string;
+  branchCode?: BranchCode;
   limit?: number;
 };
 
@@ -19,6 +21,7 @@ export const getContractsHistory = (
   const params = new URLSearchParams();
   if (filter.companyId) params.set('companyId', filter.companyId);
   if (filter.personId) params.set('personId', filter.personId);
+  if (filter.branchCode) params.set('branchCode', filter.branchCode);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   const qs = params.toString();
   return api.get<ContractStatusHistoryDto[]>(`/contracts/history${qs ? `?${qs}` : ''}`);

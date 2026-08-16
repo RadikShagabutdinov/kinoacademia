@@ -289,6 +289,7 @@ describe('contract state machine', () => {
         comment: null,
         companyId: UUID,
         companyName: 'Studio',
+        branchCode: 'cinema',
         personId: UUID,
         personDisplayName: 'Влад',
       }).success,
@@ -296,6 +297,8 @@ describe('contract state machine', () => {
 
     expect(ContractsHistoryQuery.safeParse({}).success).toBe(true);
     expect(ContractsHistoryQuery.safeParse({ limit: 10 }).success).toBe(true);
+    expect(ContractsHistoryQuery.safeParse({ branchCode: 'cinema' }).success).toBe(true);
+    expect(ContractsHistoryQuery.safeParse({ branchCode: 'nope' }).success).toBe(false);
     expect(ContractsHistoryQuery.safeParse({ limit: 1000 }).success).toBe(false);
     expect(ContractsHistoryQuery.safeParse({ extra: 1 }).success).toBe(false);
   });

@@ -653,10 +653,11 @@ contractsRoutes.openapi(confirmEndRoute, personActionHandler(contracts.confirmEn
 contractsRoutes.openapi(rejectEndRoute, personActionHandler(contracts.rejectEnd));
 
 contractsRoutes.openapi(getContractsHistoryRoute, async (c) => {
-  const { companyId, personId, limit } = c.req.valid('query');
+  const { companyId, personId, branchCode, limit } = c.req.valid('query');
   const rows = await contracts.listStatusHistory({
     ...(companyId !== undefined && { companyId }),
     ...(personId !== undefined && { personId }),
+    ...(branchCode !== undefined && { branchCode }),
     ...(limit !== undefined && { limit }),
   });
   return c.json(rows.map(contracts.toHistoryDto), 200);

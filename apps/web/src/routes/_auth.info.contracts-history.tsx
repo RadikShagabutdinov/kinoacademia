@@ -1,13 +1,18 @@
+import { companiesQueryOptions } from '@/api/companies';
 import { type ContractsHistoryFilter, getContractsHistory } from '@/api/contracts';
+import { openPersonsQueryOptions } from '@/api/persons';
 import { ContractStatusBadge } from '@/components/features/contracts/ContractStatusBadge';
 import { InfoTable } from '@/components/features/info/InfoTable';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { MonoValue } from '@/components/ui/typography';
-import type {
-  ContractKind,
-  ContractStatusCode,
-  ContractStatusHistoryDto,
+import {
+  BRANCHES,
+  BRANCH_LABELS,
+  type BranchCode,
+  type ContractKind,
+  type ContractStatusCode,
+  type ContractStatusHistoryDto,
 } from '@kinoacademia/shared';
 import { queryOptions, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
@@ -42,6 +47,7 @@ export const Route = createFileRoute('/_auth/info/contracts-history')({
 function ContractsHistoryPage() {
   const [companyId, setCompanyId] = useState<string>('');
   const [personId, setPersonId] = useState<string>('');
+  const [branchCode, setBranchCode] = useState<BranchCode | ''>('');
   const [kind, setKind] = useState<KindFilter>('all');
   const [breakupsOnly, setBreakupsOnly] = useState(false);
 
@@ -49,28 +55,42 @@ function ContractsHistoryPage() {
     const f: ContractsHistoryFilter = {};
     if (companyId) f.companyId = companyId;
     if (personId) f.personId = personId;
+    if (branchCode) f.branchCode = branchCode;
     return f;
-  }, [companyId, personId]);
+  }, [companyId, personId, branchCode]);
 
   const { data: rows = [] } = useQuery(historyQueryOptions(filter));
-  // Полный неотфильтрованный набор — для опций селектов (имена компаний/персонажей).
+  // Полный неотфильтрованный набор — для счётчика и для имён, которых нет в справочниках.
   const { data: allRows = [] } = useQuery(historyQueryOptions({}));
+  // Справочники — основной источник опций: истории может ещё не быть,
+  // а выбрать компанию или персонажа нужно в любом случае.
+  const { data: companies = [] } = useQuery(companiesQueryOptions);
+  const { data: openPersons = [] } = useQuery(openPersonsQueryOptions);
 
   const companyOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const r of allRows) map.set(r.companyId, r.companyName);
+    const map = new Map<string, { name: string; branchCode: BranchCode }>();
+    for (const c of companies) map.set(c.id, { name: c.name, branchCode: c.branchCode });
+    // Компании из истории, которых нет в справочнике (например, системные), не теряем.
+    for (const r of allRows) {
+      if (!map.has(r.companyId)) {
+        map.set(r.companyId, { name: r.companyName, branchCode: r.branchCode });
+      }
+    }
     return Array.from(map.entries())
-      .map(([id, name]) => ({ id, name }))
+      .filter(([, c]) => (branchCode ? c.branchCode === branchCode : true))
+      .map(([id, c]) => ({ id, name: c.name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [allRows]);
+  }, [companies, allRows, branchCode]);
 
   const personOptions = useMemo(() => {
     const map = new Map<string, string>();
-    for (const r of allRows) map.set(r.personId, r.personDisplayName);
+    for (const p of openPersons) map.set(p.id, p.displayName);
+    // `GET /persons` отдаёт только открытых — закрытых добираем из истории.
+    for (const r of allRows) if (!map.has(r.personId)) map.set(r.personId, r.personDisplayName);
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [allRows]);
+  }, [openPersons, allRows]);
 
   const columns = useMemo<ColumnDef<ContractStatusHistoryDto>[]>(
     () => [
@@ -137,11 +157,22 @@ function ContractsHistoryPage() {
     [rows, kind, breakupsOnly],
   );
 
-  const hasFilter = Boolean(companyId || personId) || kind !== 'all' || breakupsOnly;
+  const hasFilter = Boolean(companyId || personId || branchCode) || kind !== 'all' || breakupsOnly;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
+        <FilterSelect
+          value={branchCode}
+          onChange={(v) => {
+            setBranchCode(v as BranchCode | '');
+            // Выбранная компания могла быть из другой отрасли — иначе фильтры
+            // противоречат друг другу и выдача пустеет без видимой причины.
+            setCompanyId('');
+          }}
+          placeholder="Отрасль: все"
+          options={BRANCHES.map((code) => ({ id: code, name: BRANCH_LABELS[code] }))}
+        />
         <FilterSelect
           value={companyId}
           onChange={setCompanyId}
@@ -180,6 +211,7 @@ function ContractsHistoryPage() {
             onClick={() => {
               setCompanyId('');
               setPersonId('');
+              setBranchCode('');
               setKind('all');
               setBreakupsOnly(false);
             }}

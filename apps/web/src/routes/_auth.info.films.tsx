@@ -1,5 +1,6 @@
 import { listAllFilms } from '@/api/films';
 import type { FilmListItem } from '@/api/films';
+import { FilmCrew } from '@/components/features/films/FilmCrew';
 import { InfoTable } from '@/components/features/info/InfoTable';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
@@ -49,6 +50,7 @@ function InfoFilmsPage() {
           title="Фильмы"
           searchField="title"
           searchPlaceholder="Поиск по названию"
+          renderExpanded={(film) => <FilmCrew filmId={film.id} />}
         />
       )}
     </div>

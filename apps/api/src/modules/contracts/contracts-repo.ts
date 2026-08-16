@@ -1,5 +1,10 @@
-import type { ContractKind, ContractSide, ContractStatusCode } from '@kinoacademia/shared';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type {
+  BranchCode,
+  ContractKind,
+  ContractSide,
+  ContractStatusCode,
+} from '@kinoacademia/shared';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../../db/client';
 import {
   companies,
@@ -233,6 +238,7 @@ export type ContractHistoryRow = {
   comment: string | null;
   companyId: string;
   companyName: string;
+  branchCode: BranchCode;
   personId: string;
   personDisplayName: string;
 };
@@ -240,6 +246,7 @@ export type ContractHistoryRow = {
 export type ListStatusHistoryFilter = {
   companyId?: string;
   personId?: string;
+  branchCode?: BranchCode;
   limit?: number;
 };
 
@@ -257,7 +264,9 @@ export const listStatusHistory = async (
   const personIdExpr = sql<string>`coalesce(${permanentContracts.personId}, ${temporaryContracts.personId})`;
   const companyIdExpr = sql<string>`coalesce(${permanentContracts.companyId}, ${temporaryContracts.companyId})`;
 
-  const conditions = [] as ReturnType<typeof eq>[];
+  // Строки-«сироты» (контракт удалён, компания/персонаж не нашлись) отсеиваем в SQL,
+  // а не после выборки: иначе LIMIT считает их и клиент получает меньше строк, чем просил.
+  const conditions = [isNotNull(companies.id), isNotNull(persons.id)] as ReturnType<typeof eq>[];
   if (filter.companyId) {
     conditions.push(
       sql`coalesce(${permanentContracts.companyId}, ${temporaryContracts.companyId}) = ${filter.companyId}` as unknown as ReturnType<
@@ -271,6 +280,9 @@ export const listStatusHistory = async (
         typeof eq
       >,
     );
+  }
+  if (filter.branchCode) {
+    conditions.push(eq(companies.branchCode, filter.branchCode));
   }
 
   const rows = await exec
@@ -286,6 +298,7 @@ export const listStatusHistory = async (
       personId: personIdExpr,
       companyId: companyIdExpr,
       companyName: companies.name,
+      branchCode: companies.branchCode,
       personDisplayName: persons.displayName,
     })
     .from(contractStatusHistory)
@@ -309,22 +322,21 @@ export const listStatusHistory = async (
     .orderBy(desc(contractStatusHistory.changedAt))
     .limit(limit);
 
-  return rows
-    .filter((r) => r.companyId && r.personId)
-    .map((r) => ({
-      id: r.id,
-      contractId: r.contractId,
-      contractKind: r.contractKind as ContractKind,
-      fromStatusCode: (r.fromStatusCode ?? null) as ContractStatusCode | null,
-      toStatusCode: r.toStatusCode as ContractStatusCode,
-      changedAt: r.changedAt,
-      changedByUserId: r.changedByUserId,
-      comment: r.comment,
-      companyId: r.companyId as string,
-      companyName: r.companyName ?? '',
-      personId: r.personId as string,
-      personDisplayName: r.personDisplayName ?? '',
-    }));
+  return rows.map((r) => ({
+    id: r.id,
+    contractId: r.contractId,
+    contractKind: r.contractKind as ContractKind,
+    fromStatusCode: (r.fromStatusCode ?? null) as ContractStatusCode | null,
+    toStatusCode: r.toStatusCode as ContractStatusCode,
+    changedAt: r.changedAt,
+    changedByUserId: r.changedByUserId,
+    comment: r.comment,
+    companyId: r.companyId as string,
+    companyName: r.companyName ?? '',
+    branchCode: (r.branchCode ?? 'other') as BranchCode,
+    personId: r.personId as string,
+    personDisplayName: r.personDisplayName ?? '',
+  }));
 };
 
 export const listContractsByCompany = async (

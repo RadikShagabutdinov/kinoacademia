@@ -1,4 +1,5 @@
 import { z } from '@hono/zod-openapi';
+import { BranchCode } from './branches';
 import { IsoDateTime, Uuid } from './common';
 
 export const CONTRACT_KINDS = ['permanent', 'temporary'] as const;
@@ -127,6 +128,7 @@ export const ContractStatusHistoryDto = z.object({
   comment: z.string().nullable(),
   companyId: Uuid,
   companyName: z.string(),
+  branchCode: BranchCode,
   personId: Uuid,
   personDisplayName: z.string(),
 });
@@ -136,6 +138,7 @@ export const ContractsHistoryQuery = z
   .object({
     companyId: Uuid.optional(),
     personId: Uuid.optional(),
+    branchCode: BranchCode.optional(),
     limit: z.coerce.number().int().positive().max(500).optional(),
   })
   .strict();

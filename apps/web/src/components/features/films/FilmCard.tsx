@@ -5,34 +5,18 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { NoticeBox } from '@/components/ui/notice-box';
-import {
-  FILM_ROLES,
-  FILM_ROLE_LABELS,
-  type FilmAssignmentDetailDto,
-  type FilmRole,
-} from '@kinoacademia/shared';
+import { FILM_ROLES, FILM_ROLE_LABELS } from '@kinoacademia/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clapperboard, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AddAssignmentDialog } from './AddAssignmentDialog';
 import { getFilmErrorMessage } from './filmErrors';
+import { groupByRole } from './groupByRole';
 
 type Props = {
   film: FilmListItem;
   /** Если true — показываем кнопку «Изменить съёмочную группу». */
   canEdit: boolean;
-};
-
-const groupByRole = (
-  assignments: FilmAssignmentDetailDto[],
-): Map<FilmRole, FilmAssignmentDetailDto[]> => {
-  const map = new Map<FilmRole, FilmAssignmentDetailDto[]>();
-  for (const a of assignments) {
-    const list = map.get(a.role);
-    if (list) list.push(a);
-    else map.set(a.role, [a]);
-  }
-  return map;
 };
 
 export const FilmCard = ({ film, canEdit }: Props) => {
