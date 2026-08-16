@@ -2,6 +2,7 @@ import {
   type CreateOscarNominationInput,
   NOMINATION_LABELS,
   NOMINATION_TO_FILM_ROLE,
+  OSCAR_NOMINEE_BONUS,
   OSCAR_WIN_COMPANY_BONUS,
   OSCAR_WIN_PERSON_BONUS,
   type OscarDto,
@@ -13,6 +14,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { persons } from '../../db/schema';
 import { findCompanyById } from '../companies/companies-repo';
+import * as contractsRepo from '../contracts/contracts-repo';
 import * as filmsRepo from '../films/films-repo';
 import * as ratingsRepo from '../ratings/ratings-repo';
 import * as ratings from '../ratings/ratings.service';
@@ -227,20 +229,43 @@ export type AwardOscarInput = {
 };
 
 /**
- * Присуждение награды. Идемпотентно: если уже `isWinner=true`, бросает
- * `OscarError('already_awarded')`. Внутри одной транзакции:
- *  1. SELECT FOR UPDATE строки `oscars`
- *  2. UPDATE isWinner = true
- *  3. начисление +OSCAR_WIN_PERSON_BONUS персонажу (kind=oscar)
- *  4. если фильм не закрытой номинации — начисление +OSCAR_WIN_COMPANY_BONUS
- *     компании-создателю фильма
+ * Присуждение награды. Первое присуждение закрывает номинацию целиком: второго
+ * победителя в той же категории быть не может, а все прочие номинанты сразу получают
+ * утешительный приз. Внутри одной транзакции:
+ *  1. SELECT FOR UPDATE всех строк номинации
+ *  2. UPDATE isWinner = true у выбранной строки
+ *  3. победителю +OSCAR_WIN_PERSON_BONUS в постоянный рейтинг (kind=oscar)
+ *  4. компании, номинировавшей победителя, — отдельные +OSCAR_WIN_COMPANY_BONUS,
+ *     но только если у победителя есть действующий контракт с ней
+ *  5. каждому проигравшему номинанту +OSCAR_NOMINEE_BONUS
+ *
+ * Зеркалить начисления персон в постоянный рейтинг их компаний не нужно — это делает
+ * сам `ratings.manualPersonTransaction` по постоянному контракту персоны.
+ *
+ * Закрытая номинация `contribution` присуждается без движений рейтинга: она админская,
+ * конкурса в ней нет, начисления админ делает вручную под нужды игры.
  */
 export const awardOscar = async (input: AwardOscarInput): Promise<OscarRow> => {
   const result = await db.transaction(async (tx) => {
-    const current = await repo.findOscarByIdForUpdate(tx, input.oscarId);
+    const existing = await repo.findOscarById(tx, input.oscarId);
+    if (!existing) throw new OscarError('oscar_not_found', 'Oscar not found');
+
+    const nominationCode = existing.nominationCode;
+    const label = NOMINATION_LABELS[nominationCode];
+    const siblings = await repo.findByNominationForUpdate(tx, nominationCode);
+
+    const current = siblings.find((row) => row.id === input.oscarId);
     if (!current) throw new OscarError('oscar_not_found', 'Oscar not found');
     if (current.isWinner) {
       throw new OscarError('already_awarded', 'Oscar already awarded');
+    }
+    // Закрытие категории первым победителем — только для конкурсных номинаций:
+    // `contribution` админ может вручить нескольким персонажам за игру.
+    if (isCinemaOnlyNomination(nominationCode) && siblings.some((row) => row.isWinner)) {
+      throw new OscarError(
+        'nomination_already_awarded',
+        `В номинации «${label}» уже есть победитель`,
+      );
     }
 
     const updated = await repo.setWinner(tx, input.oscarId);
@@ -252,26 +277,55 @@ export const awardOscar = async (input: AwardOscarInput): Promise<OscarRow> => {
       companyId = film?.companyId ?? null;
     }
 
+    if (!isCinemaOnlyNomination(nominationCode)) {
+      return { row: updated, companyId };
+    }
+
     if (current.personId) {
       await ratings.manualPersonTransaction({
         personId: current.personId,
         amount: OSCAR_WIN_PERSON_BONUS,
         kind: 'oscar',
         mode: 'absolute',
-        comment: `Победа в номинации: ${current.nominationCode}`,
+        comment: `Победа в номинации: ${label}`,
         actorUserId: input.actorUserId,
         exec: tx,
       });
     }
 
-    // Компании начисляем только за «обычные» (cinema) номинации с фильмом.
-    if (companyId && isCinemaOnlyNomination(current.nominationCode)) {
-      await ratings.manualCompanyTransaction({
-        companyId,
-        amount: OSCAR_WIN_COMPANY_BONUS,
+    // Бонус компании-номинатору — только при контракте с победителем; тип контракта
+    // и то, действует ли он до конца игры, роли не играет.
+    if (companyId && current.personId) {
+      const hasContract =
+        (await contractsRepo.findActivePermanentByPersonCompany(tx, current.personId, companyId)) ??
+        (await contractsRepo.findActiveTemporary(tx, current.personId, companyId));
+      if (hasContract) {
+        await ratings.manualCompanyTransaction({
+          companyId,
+          amount: OSCAR_WIN_COMPANY_BONUS,
+          kind: 'oscar',
+          mode: 'absolute',
+          comment: `Победа в номинации: ${label}`,
+          actorUserId: input.actorUserId,
+          exec: tx,
+        });
+      }
+    }
+
+    // Утешительный приз проигравшим — по разу на персону: одну и ту же персону могли
+    // номинировать в этой категории сразу несколько компаний.
+    const losers = new Set(
+      siblings
+        .filter((row) => row.id !== current.id && row.personId && row.personId !== current.personId)
+        .map((row) => row.personId as string),
+    );
+    for (const personId of losers) {
+      await ratings.manualPersonTransaction({
+        personId,
+        amount: OSCAR_NOMINEE_BONUS,
         kind: 'oscar',
         mode: 'absolute',
-        comment: `Победа в номинации: ${current.nominationCode}`,
+        comment: `Номинация без победы: ${label}`,
         actorUserId: input.actorUserId,
         exec: tx,
       });

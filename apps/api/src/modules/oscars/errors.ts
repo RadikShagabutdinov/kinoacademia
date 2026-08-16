@@ -9,6 +9,7 @@ export type OscarErrorCode =
   | 'person_not_in_film'
   | 'film_not_in_company'
   | 'already_awarded'
+  | 'nomination_already_awarded'
   | 'requires_film'
   | 'requires_person'
   | 'insufficient_budget';
@@ -39,6 +40,7 @@ export const oscarErrorStatus = (code: OscarErrorCode): 400 | 404 | 409 => {
     case 'person_not_in_film':
     case 'film_not_in_company':
     case 'already_awarded':
+    case 'nomination_already_awarded':
     case 'insufficient_budget':
       return 409;
   }

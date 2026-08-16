@@ -10,6 +10,8 @@ const assignments: Array<{
   role: string;
 }> = [];
 const persons = new Set<string>();
+/** Действующие контракты персон с компаниями: `${personId}:${companyId}` → тип. */
+const contracts = new Map<string, 'permanent' | 'temporary'>();
 const personOscarBalance = new Map<string, number>();
 const companyOscarBalance = new Map<string, number>();
 const companyBudget = new Map<string, number>();
@@ -46,9 +48,24 @@ vi.mock('../films/films-repo', () => ({
     null,
 }));
 
+vi.mock('../contracts/contracts-repo', () => ({
+  findActivePermanentByPersonCompany: async (_e: unknown, personId: string, companyId: string) =>
+    contracts.get(`${personId}:${companyId}`) === 'permanent'
+      ? { id: 'c', kind: 'permanent' }
+      : null,
+  findActiveTemporary: async (_e: unknown, personId: string, companyId: string) =>
+    contracts.get(`${personId}:${companyId}`) === 'temporary'
+      ? { id: 'c', kind: 'temporary' }
+      : null,
+}));
+
 vi.mock('./oscars-repo', () => ({
   findOscarById: async (_e: unknown, id: string) => oscarRows.get(id) ?? null,
   findOscarByIdForUpdate: async (_e: unknown, id: string) => oscarRows.get(id) ?? null,
+  findByNominationForUpdate: async (_e: unknown, nominationCode: string) =>
+    [...oscarRows.values()]
+      .filter((o) => o.nominationCode === nominationCode)
+      .sort((a, b) => a.id.localeCompare(b.id)),
   insertOscar: async (
     _e: unknown,
     data: { filmId: string | null; personId: string | null; nominationCode: string },
@@ -112,7 +129,11 @@ vi.mock('../ratings/ratings-repo', () => ({
 
 // Замена для drizzle-orm `eq` — используем чтобы persons.select().where()...
 // возвращал «персон есть/нет». Подменим db.select прямо в тесте.
-import { OSCAR_WIN_COMPANY_BONUS, OSCAR_WIN_PERSON_BONUS } from '@kinoacademia/shared';
+import {
+  OSCAR_NOMINEE_BONUS,
+  OSCAR_WIN_COMPANY_BONUS,
+  OSCAR_WIN_PERSON_BONUS,
+} from '@kinoacademia/shared';
 import { db } from '../../db/client';
 import { OscarError } from './errors';
 import * as service from './oscars.service';
@@ -122,6 +143,7 @@ const reset = () => {
   films.clear();
   assignments.length = 0;
   persons.clear();
+  contracts.clear();
   personOscarBalance.clear();
   companyOscarBalance.clear();
   companyBudget.clear();
@@ -357,28 +379,36 @@ describe('withdrawNomination', () => {
 });
 
 describe('awardOscar', () => {
-  const seedNomination = (filmId: string, companyId: string, personId: string) => {
+  /** Номинация от отдельной компании со своим фильмом и персонажем-режиссёром. */
+  const seedNomination = (
+    opts: {
+      nominationCode?: OscarRow['nominationCode'];
+      personId?: string;
+      contract?: 'permanent' | 'temporary';
+    } = {},
+  ) => {
+    const filmId = randomUUID();
+    const companyId = randomUUID();
+    const personId = opts.personId ?? randomUUID();
     films.set(filmId, { id: filmId, companyId });
     persons.add(personId);
     assignments.push({ filmId, personId, role: 'director' });
+    if (opts.contract) contracts.set(`${personId}:${companyId}`, opts.contract);
     const oscarId = randomUUID();
     oscarRows.set(oscarId, {
       id: oscarId,
       filmId,
       personId,
-      nominationCode: 'best_film',
+      nominationCode: opts.nominationCode ?? 'best_film',
       isWinner: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    return oscarId;
+    return { oscarId, filmId, companyId, personId };
   };
 
-  it('начисляет +OSCAR_WIN_PERSON_BONUS персонажу и +OSCAR_WIN_COMPANY_BONUS компании', async () => {
-    const filmId = randomUUID();
-    const companyId = randomUUID();
-    const personId = randomUUID();
-    const oscarId = seedNomination(filmId, companyId, personId);
+  it('начисляет победителю OSCAR_WIN_PERSON_BONUS, а компании-номинатору — OSCAR_WIN_COMPANY_BONUS при контракте', async () => {
+    const { oscarId, companyId, personId } = seedNomination({ contract: 'temporary' });
 
     await service.awardOscar({ oscarId, actorUserId: ACTOR });
 
@@ -387,11 +417,50 @@ describe('awardOscar', () => {
     expect(oscarRows.get(oscarId)?.isWinner).toBe(true);
   });
 
-  it('повторное присуждение бросает already_awarded', async () => {
-    const filmId = randomUUID();
-    const companyId = randomUUID();
+  it('без контракта победителя с номинировавшей компанией бонус компании не начисляется', async () => {
+    const { oscarId, companyId, personId } = seedNomination();
+
+    await service.awardOscar({ oscarId, actorUserId: ACTOR });
+
+    expect(personOscarBalance.get(personId)).toBe(OSCAR_WIN_PERSON_BONUS);
+    expect(companyOscarBalance.get(companyId)).toBeUndefined();
+  });
+
+  it('начисляет проигравшим номинантам той же номинации утешительный приз', async () => {
+    const winner = seedNomination();
+    const loser = seedNomination();
+    const other = seedNomination({ nominationCode: 'best_script' });
+
+    await service.awardOscar({ oscarId: winner.oscarId, actorUserId: ACTOR });
+
+    expect(personOscarBalance.get(loser.personId)).toBe(OSCAR_NOMINEE_BONUS);
+    expect(personOscarBalance.get(other.personId)).toBeUndefined();
+    expect(companyOscarBalance.get(loser.companyId)).toBeUndefined();
+  });
+
+  it('персона, номинированная в категории дважды, получает утешительный приз один раз', async () => {
+    const winner = seedNomination();
+    const loserPersonId = randomUUID();
+    seedNomination({ personId: loserPersonId });
+    seedNomination({ personId: loserPersonId });
+
+    await service.awardOscar({ oscarId: winner.oscarId, actorUserId: ACTOR });
+
+    expect(personOscarBalance.get(loserPersonId)).toBe(OSCAR_NOMINEE_BONUS);
+  });
+
+  it('победитель, номинированный в категории дважды, утешительный приз не получает', async () => {
     const personId = randomUUID();
-    const oscarId = seedNomination(filmId, companyId, personId);
+    const winner = seedNomination({ personId });
+    seedNomination({ personId });
+
+    await service.awardOscar({ oscarId: winner.oscarId, actorUserId: ACTOR });
+
+    expect(personOscarBalance.get(personId)).toBe(OSCAR_WIN_PERSON_BONUS);
+  });
+
+  it('повторное присуждение бросает already_awarded', async () => {
+    const { oscarId } = seedNomination();
 
     await service.awardOscar({ oscarId, actorUserId: ACTOR });
 
@@ -400,7 +469,20 @@ describe('awardOscar', () => {
     });
   });
 
-  it('contribution: персонажу начисляется бонус, компании — нет', async () => {
+  it('второй победитель в той же номинации невозможен', async () => {
+    const winner = seedNomination();
+    const loser = seedNomination();
+    await service.awardOscar({ oscarId: winner.oscarId, actorUserId: ACTOR });
+    const balanceAfterAward = personOscarBalance.get(loser.personId);
+
+    await expect(
+      service.awardOscar({ oscarId: loser.oscarId, actorUserId: ACTOR }),
+    ).rejects.toMatchObject({ code: 'nomination_already_awarded' });
+    expect(oscarRows.get(loser.oscarId)?.isWinner).toBe(false);
+    expect(personOscarBalance.get(loser.personId)).toBe(balanceAfterAward);
+  });
+
+  it('contribution: статуэтка без начислений рейтинга', async () => {
     const personId = randomUUID();
     persons.add(personId);
     const oscarId = randomUUID();
@@ -416,7 +498,39 @@ describe('awardOscar', () => {
 
     await service.awardOscar({ oscarId, actorUserId: ACTOR });
 
-    expect(personOscarBalance.get(personId)).toBe(OSCAR_WIN_PERSON_BONUS);
+    expect(oscarRows.get(oscarId)?.isWinner).toBe(true);
+    expect(personOscarBalance.size).toBe(0);
     expect(companyOscarBalance.size).toBe(0);
+  });
+
+  it('contribution можно присудить нескольким персонажам', async () => {
+    const seedContribution = () => {
+      const personId = randomUUID();
+      persons.add(personId);
+      const oscarId = randomUUID();
+      oscarRows.set(oscarId, {
+        id: oscarId,
+        filmId: null,
+        personId,
+        nominationCode: 'contribution',
+        isWinner: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      return oscarId;
+    };
+    const first = seedContribution();
+    const second = seedContribution();
+
+    await service.awardOscar({ oscarId: first, actorUserId: ACTOR });
+    await service.awardOscar({ oscarId: second, actorUserId: ACTOR });
+
+    expect(oscarRows.get(second)?.isWinner).toBe(true);
+  });
+
+  it('несуществующая номинация — oscar_not_found', async () => {
+    await expect(
+      service.awardOscar({ oscarId: randomUUID(), actorUserId: ACTOR }),
+    ).rejects.toMatchObject({ code: 'oscar_not_found' });
   });
 });

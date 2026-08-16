@@ -40,7 +40,7 @@ const awardRoute = createRoute({
   tags: ['admin', 'oscars'],
   summary: 'Award Oscar (admin)',
   description:
-    'Atomically marks oscar as winner and credits +OSCAR_WIN_PERSON_BONUS to person and +OSCAR_WIN_COMPANY_BONUS to film company. Idempotent: повторный вызов на ту же номинацию вернёт 409 already_awarded.',
+    'Atomically marks oscar as winner, credits +OSCAR_WIN_PERSON_BONUS to the winner, +OSCAR_WIN_COMPANY_BONUS to the nominating company if the winner has any active contract with it, and +OSCAR_NOMINEE_BONUS to every other nominee of the same nomination. Присуждение закрывает номинацию: повторный вызов на ту же строку вернёт 409 already_awarded, на другую строку той же категории — 409 nomination_already_awarded. Закрытая contribution присуждается без начислений.',
   security: [{ cookieAuth: [] }],
   request: { params: z.object({ id: Uuid }) },
   responses: {

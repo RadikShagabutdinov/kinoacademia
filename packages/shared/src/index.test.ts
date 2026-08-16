@@ -25,6 +25,9 @@ import {
   LoginInput,
   ManualRatingInput,
   NominationCode,
+  OSCAR_NOMINEE_BONUS,
+  OSCAR_WIN_COMPANY_BONUS,
+  OSCAR_WIN_PERSON_BONUS,
   OscarDto,
   OscarWithdrawResultDto,
   PersonDto,
@@ -311,6 +314,12 @@ describe('oscar / ws / api error', () => {
         updatedAt: NOW,
       }).success,
     ).toBe(true);
+  });
+
+  it('exposes oscar award bonuses', () => {
+    expect(OSCAR_WIN_PERSON_BONUS).toBe(400);
+    expect(OSCAR_WIN_COMPANY_BONUS).toBe(400);
+    expect(OSCAR_NOMINEE_BONUS).toBe(100);
   });
 
   it('parses OscarWithdrawResultDto', () => {

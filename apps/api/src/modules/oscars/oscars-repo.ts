@@ -51,6 +51,24 @@ export const findOscarByIdForUpdate = async (
   return rows[0] ? toRow(rows[0]) : null;
 };
 
+/**
+ * Блокирует все строки одной номинации для присуждения: победитель определяется на
+ * всю категорию сразу, а проигравшим начисляется утешительный приз. Порядок по `id`
+ * фиксирован, чтобы параллельные присуждения в одной категории не поймали дедлок.
+ */
+export const findByNominationForUpdate = async (
+  exec: DbExecutor,
+  nominationCode: NominationCode,
+): Promise<OscarRow[]> => {
+  const rows = await exec
+    .select()
+    .from(oscars)
+    .where(eq(oscars.nominationCode, nominationCode))
+    .orderBy(oscars.id)
+    .for('update');
+  return rows.map(toRow);
+};
+
 export const insertOscar = async (
   exec: DbExecutor,
   data: {

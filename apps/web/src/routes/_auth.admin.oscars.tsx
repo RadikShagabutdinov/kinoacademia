@@ -7,7 +7,7 @@ import { WithdrawNominationButton } from '@/components/features/oscars/WithdrawN
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWsChannel } from '@/hooks/useWs';
-import { computeNominationCost } from '@kinoacademia/shared';
+import { computeNominationCost, isCinemaOnlyNomination } from '@kinoacademia/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { Award } from 'lucide-react';
@@ -54,7 +54,16 @@ function AdminOscarsPage() {
                   actionsHeader="Действия"
                   renderActions={(row) => (
                     <div className="flex items-start gap-2">
-                      <AwardOscarButton row={row} />
+                      <AwardOscarButton
+                        row={row}
+                        nominationClosed={data.some(
+                          (r) =>
+                            r.isWinner &&
+                            r.id !== row.id &&
+                            r.nominationCode === row.nominationCode &&
+                            isCinemaOnlyNomination(r.nominationCode),
+                        )}
+                      />
                       <WithdrawNominationButton
                         row={row}
                         refund={computeNominationCost(
