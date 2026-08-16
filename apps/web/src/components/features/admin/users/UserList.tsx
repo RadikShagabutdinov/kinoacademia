@@ -1,14 +1,8 @@
 import { listUsers, resetUserPassword, updateUser } from '@/api/admin/users';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/sonner';
 import {
@@ -98,34 +92,24 @@ export const UserList = () => {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="w-[200px]">
-          <Select value={role} onValueChange={(v) => setRole(v as RoleCode | 'all')}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLE_FILTERS.map((f) => (
-                <SelectItem key={f.value} value={f.value}>
-                  {f.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="w-[160px]">
-          <Select value={active} onValueChange={(v) => setActive(v as typeof active)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ACTIVE_FILTERS.map((f) => (
-                <SelectItem key={f.value} value={f.value}>
-                  {f.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Combobox
+          className="w-[200px]"
+          value={role}
+          onChange={(v) => setRole(v as RoleCode | 'all')}
+          options={[...ROLE_FILTERS]}
+          placeholder="Все роли"
+          clearable={false}
+          aria-label="Фильтр по роли"
+        />
+        <Combobox
+          className="w-[160px]"
+          value={active}
+          onChange={(v) => setActive(v as typeof active)}
+          options={[...ACTIVE_FILTERS]}
+          placeholder="Все"
+          clearable={false}
+          aria-label="Фильтр по активности"
+        />
       </div>
 
       <div className="rounded-md border border-[var(--color-border)]">

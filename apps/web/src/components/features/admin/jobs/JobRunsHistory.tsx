@@ -1,11 +1,5 @@
 import { listJobRuns } from '@/api/admin/jobs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -48,20 +42,15 @@ export const JobRunsHistory = ({ jobKey }: Props) => {
   return (
     <div className="space-y-3">
       <div className="flex items-end gap-3">
-        <div className="w-[180px]">
-          <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_FILTERS.map((f) => (
-                <SelectItem key={f.value} value={f.value}>
-                  {f.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Combobox
+          className="w-[180px]"
+          value={status}
+          onChange={(v) => setStatus(v as typeof status)}
+          options={STATUS_FILTERS}
+          placeholder="Все"
+          clearable={false}
+          aria-label="Фильтр по статусу прогона"
+        />
       </div>
 
       <div className="rounded-md border border-[var(--color-border)]">

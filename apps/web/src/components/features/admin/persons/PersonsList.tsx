@@ -1,13 +1,7 @@
 import { listAdminPersons } from '@/api/admin/persons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -43,20 +37,15 @@ export const PersonsList = () => {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-[160px]">
-          <Select value={status} onValueChange={(v) => setStatus(v as Status)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_FILTERS.map((f) => (
-                <SelectItem key={f.value} value={f.value}>
-                  {f.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Combobox
+          className="w-[160px]"
+          value={status}
+          onChange={(v) => setStatus(v as Status)}
+          options={[...STATUS_FILTERS]}
+          placeholder="Все"
+          clearable={false}
+          aria-label="Фильтр по статусу"
+        />
       </div>
 
       <div className="rounded-md border border-[var(--color-border)]">

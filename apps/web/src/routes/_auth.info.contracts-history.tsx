@@ -4,7 +4,7 @@ import { openPersonsQueryOptions } from '@/api/persons';
 import { ContractStatusBadge } from '@/components/features/contracts/ContractStatusBadge';
 import { InfoTable } from '@/components/features/info/InfoTable';
 import { Button } from '@/components/ui/button';
-import { NativeSelect } from '@/components/ui/native-select';
+import { Combobox } from '@/components/ui/combobox';
 import { MonoValue } from '@/components/ui/typography';
 import {
   BRANCHES,
@@ -78,8 +78,8 @@ function ContractsHistoryPage() {
     }
     return Array.from(map.entries())
       .filter(([, c]) => (branchCode ? c.branchCode === branchCode : true))
-      .map(([id, c]) => ({ id, name: c.name }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      .map(([id, c]) => ({ value: id, label: c.name }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
   }, [companies, allRows, branchCode]);
 
   const personOptions = useMemo(() => {
@@ -88,8 +88,8 @@ function ContractsHistoryPage() {
     // `GET /persons` отдаёт только открытых — закрытых добираем из истории.
     for (const r of allRows) if (!map.has(r.personId)) map.set(r.personId, r.personDisplayName);
     return Array.from(map.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
   }, [openPersons, allRows]);
 
   const columns = useMemo<ColumnDef<ContractStatusHistoryDto>[]>(
@@ -162,7 +162,8 @@ function ContractsHistoryPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <FilterSelect
+        <Combobox
+          className="w-[190px]"
           value={branchCode}
           onChange={(v) => {
             setBranchCode(v as BranchCode | '');
@@ -171,27 +172,32 @@ function ContractsHistoryPage() {
             setCompanyId('');
           }}
           placeholder="Отрасль: все"
-          options={BRANCHES.map((code) => ({ id: code, name: BRANCH_LABELS[code] }))}
+          options={BRANCHES.map((code) => ({ value: code, label: BRANCH_LABELS[code] }))}
         />
-        <FilterSelect
+        <Combobox
+          className="w-[210px]"
           value={companyId}
           onChange={setCompanyId}
           placeholder="Компания: все"
+          searchPlaceholder="Поиск компании"
           options={companyOptions}
         />
-        <FilterSelect
+        <Combobox
+          className="w-[210px]"
           value={personId}
           onChange={setPersonId}
           placeholder="Персонаж: все"
+          searchPlaceholder="Поиск персонажа"
           options={personOptions}
         />
-        <FilterSelect
+        <Combobox
+          className="w-[230px]"
           value={kind === 'all' ? '' : kind}
           onChange={(v) => setKind((v || 'all') as KindFilter)}
           placeholder="Тип: постоянные и временные"
           options={[
-            { id: 'permanent', name: 'Только постоянные' },
-            { id: 'temporary', name: 'Только временные' },
+            { value: 'permanent', label: 'Только постоянные' },
+            { value: 'temporary', label: 'Только временные' },
           ]}
         />
         <label className="inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-muted-fg)] transition-colors hover:text-[var(--color-fg)]">
@@ -235,30 +241,6 @@ function ContractsHistoryPage() {
     </div>
   );
 }
-
-type SelectOption = { id: string; name: string };
-type SelectProps = {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  options: SelectOption[];
-};
-
-const FilterSelect = ({ value, onChange, placeholder, options }: SelectProps) => (
-  <NativeSelect
-    value={value}
-    onChange={(e) => onChange(e.target.value)}
-    aria-label={placeholder}
-    className="h-9 min-w-[190px] text-xs"
-  >
-    <option value="">{placeholder}</option>
-    {options.map((o) => (
-      <option key={o.id} value={o.id}>
-        {o.name}
-      </option>
-    ))}
-  </NativeSelect>
-);
 
 const dtFormatter = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit',

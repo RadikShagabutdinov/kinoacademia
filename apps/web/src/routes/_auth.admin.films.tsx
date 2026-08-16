@@ -5,8 +5,8 @@ import { CreateFilmDialog } from '@/components/features/films/CreateFilmDialog';
 import { FilmCard } from '@/components/features/films/FilmCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { Film } from 'lucide-react';
@@ -58,18 +58,14 @@ function AdminFilmsPage() {
         <CardContent className="space-y-3">
           <div className="grid max-w-xs gap-2">
             <Label htmlFor="film-company-filter">Компания</Label>
-            <NativeSelect
+            <Combobox
               id="film-company-filter"
               value={companyFilter}
-              onChange={(e) => setCompanyFilter(e.target.value)}
-            >
-              <option value="">Все кинокомпании</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </NativeSelect>
+              onChange={setCompanyFilter}
+              placeholder="Все кинокомпании"
+              searchPlaceholder="Поиск компании"
+              options={companies.map((c) => ({ value: c.id, label: c.name }))}
+            />
           </div>
 
           {isPending && <p className="text-sm text-[var(--color-muted-fg)]">Загрузка…</p>}
